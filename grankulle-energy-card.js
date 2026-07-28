@@ -38,7 +38,7 @@ class GrankulleEnergyCard extends HTMLElement {
     const v = this._val(key);
     const n = parseFloat(v);
     if (v === null || isNaN(n)) return null;
-    return decimals === undefined ? n : n.toFixed(decimals);
+    return decimals === undefined ? n : parseFloat(n.toFixed(decimals));
   }
   _set(id, text) {
     const el = this.shadowRoot.getElementById(id);
