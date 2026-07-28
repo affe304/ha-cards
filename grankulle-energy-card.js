@@ -20,6 +20,7 @@ class GrankulleEnergyCard extends HTMLElement {
   }
 
   getCardSize() { return 12; }
+  getGridOptions() { return { columns: "full", rows: "auto", min_columns: 6 }; }
 
   // ---------- helpers ----------
   _e(key) {
