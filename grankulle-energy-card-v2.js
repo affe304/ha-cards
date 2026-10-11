@@ -116,6 +116,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const el = this.shadowRoot.getElementById(id);
     if (el) el.textContent = text;
   }
+  // power flow as words instead of +/- : pos -> posWord, neg -> negWord, ~0 -> zeroWord
+  _flow(n, posWord, negWord, zeroWord, noKw) {
+    if (n === null || n === undefined || !isFinite(n)) return "–";
+    if (Math.abs(n) < 0.05) return zeroWord;
+    return (n > 0 ? posWord : negWord) + (noKw ? "" : " " + Math.abs(n).toFixed(2) + " kW");
+  }
   _sgn(n, decimals = 2, suffix = "") {
     if (n === null || n === undefined || !isFinite(n)) return "–";
     const r = Number(n.toFixed(decimals));
@@ -165,6 +171,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="panel price">
           <div class="panel-title">Elpris just nu</div>
           <div class="price-big" id="v-price">– kr/kWh</div>
+          <div class="price-lvl" id="v-price-lvl">–</div>
           <div class="price-sub">Tibber Pulse · Grankullevägen</div>
         </div>
 
@@ -196,7 +203,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="tag" id="tag-house" style="left:42%; top:40%;">
           <div class="tag-lbl">HUSFÖRBRUKNING</div><div class="tag-val" id="tag-v-house">– kW</div>
         </div>
-        <div class="tag green" id="tag-batt" style="left:41.5%; top:45.5%;">
+        <div class="tag green" id="tag-batt" style="left:39.5%; top:45.5%;">
           <div class="tag-lbl">HUSBATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
         </div>
         <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
@@ -593,13 +600,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("v-selfsuff", selfSuff + "%");
     this._set("v-solar", this._fmt(solar, 2, " kW"));
     this._set("v-house", this._fmt(house, 2, " kW"));
-    this._set("v-batt", Math.round(battSoc) + "% · " + this._sgn(battPower, 2, " kW"));
-    this._set("v-grid", this._sgn(grid, 2, " kW"));
+    this._set("v-batt", Math.round(battSoc) + "% · " + this._flow(battPower, "Laddar", "Urladdar", "Vilar", true));
+    this._set("v-grid", this._flow(grid, "Köper", "Säljer", "Balans"));
 
     this._set("tag-v-solar", this._fmt(solar, 2, " kW"));
     this._set("tag-v-house", this._fmt(house, 2, " kW"));
-    this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._sgn(battPower, 2, " kW"));
-    this._set("tag-v-grid", this._sgn(grid, 2, " kW"));
+    this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._flow(battPower, "Laddar", "Urladdar", "Vilar"));
+    this._set("tag-v-grid", this._flow(grid, "Köper", "Säljer", "Balans"));
     const evSoc = this._num("ev_soc");
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
     const evTgt2 = this._num("ev_soc_target");
@@ -627,6 +634,20 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
     const price = this._num("tibber_price");
     this._set("v-price", price === null ? "–" : price.toFixed(2) + " kr/kWh");
+    {
+      // Tibber price level (VERY_CHEAP..VERY_EXPENSIVE): price relative to average, Tibber's thresholds 60/90/115/140 %
+      const pst = this._st("tibber_price");
+      const avg = pst ? parseFloat(pst.attributes && pst.attributes.avg_price) : NaN;
+      const lvlEl = this.shadowRoot.getElementById("v-price-lvl");
+      if (lvlEl) {
+        if (price !== null && isFinite(avg) && avg > 0) {
+          const r = price / avg;
+          const L = r < 0.6 ? ["Mycket billigt", "#3ddc84"] : r < 0.9 ? ["Billigt", "#8fe36b"] : r < 1.15 ? ["Normalt", "#f0c13c"] : r < 1.4 ? ["Dyrt", "#f08a3c"] : ["Mycket dyrt", "#e2634f"];
+          lvlEl.textContent = L[0] + " · " + Math.round(r * 100) + " % av snittet";
+          lvlEl.style.color = L[1];
+        } else { lvlEl.textContent = "–"; lvlEl.style.color = ""; }
+      }
+    }
 
     this._set("v-day-solar", this._fmt(this._num("tibber_production"), 1, " kWh"));
     this._set("v-day-house", this._fmt(this._num("tibber_consumption"), 1, " kWh"));
@@ -707,6 +728,7 @@ const STYLE = `
   .now { left: 2%; top: 10%; }
   .price { left: 2%; top: 28%; text-align: center; }
   .price-big { font-size: 1.6vw; font-weight: 700; }
+  .price-lvl { font-size: 0.8vw; font-weight: 800; letter-spacing: 0.5px; margin-top: 2px; text-transform: uppercase; }
   .price-sub { font-size: 0.55vw; opacity: 0.7; margin-top: 2px; }
   .batt { left: 2%; top: 38%; text-align: center; }
   .gauge { width: 4.6vw; height: 4.6vw; margin: 4px auto; display: block; }
