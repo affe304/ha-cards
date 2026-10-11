@@ -194,7 +194,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="tag" id="tag-house" style="left:42%; top:40%;">
           <div class="tag-lbl">HUSFÖRBRUKNING</div><div class="tag-val" id="tag-v-house">– kW</div>
         </div>
-        <div class="tag green" id="tag-batt" style="left:59%; top:46%;">
+        <div class="tag green" id="tag-batt" style="left:41.5%; top:45.5%;">
           <div class="tag-lbl">HUSBATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
         </div>
         <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
