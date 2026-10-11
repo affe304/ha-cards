@@ -412,7 +412,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _fetchForecast() {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${this._lat}&longitude=${this._lon}` +
       `&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m,surface_pressure` +
-      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=5`;
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&wind_speed_unit=ms&timezone=auto&forecast_days=5`;
     fetch(url).then(r => r.json()).then(data => {
       this._forecast = data;
       this._renderForecast();
@@ -441,6 +441,39 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     }).join("");
   }
 
+  // Wind from your own weather station (Tempest), converted to m/s. Falls back to Open-Meteo.
+  _stationWind() {
+    const h = this._hass;
+    if (!h) return null;
+    const ent = (this._config && this._config.entities) || {};
+    const toMs = (st) => {
+      if (!st) return null;
+      const v = parseFloat(st.state);
+      if (!isFinite(v)) return null;
+      const u = String((st.attributes && st.attributes.unit_of_measurement) || "").toLowerCase();
+      if (u === "km/h" || u === "kph") return v / 3.6;
+      if (u === "mph") return v * 0.44704;
+      if (u === "kn" || u === "kt" || u === "knots") return v * 0.514444;
+      return v;
+    };
+    const sp = toMs(h.states[ent.weather_wind || "sensor.st_00150138_genomsnittlig_vindhastighet"]);
+    if (sp === null) return null;
+    const dSt = h.states[ent.weather_wind_dir || "sensor.st_00150138_vindriktning"];
+    const dir = dSt ? parseFloat(dSt.state) : NaN;
+    return { ms: sp, gust: toMs(h.states[ent.weather_wind_gust || "sensor.st_00150138_vindby"]), dir: isFinite(dir) ? dir : null };
+  }
+  _applyStationWind() {
+    const w = this._stationWind();
+    if (!w) return;
+    this._set("w-wind", w.ms.toFixed(1) + " m/s");
+    this._set("v-windspeed", w.ms.toFixed(1) + " m/s" + (w.gust !== null ? " · by " + w.gust.toFixed(1) : ""));
+    if (w.dir !== null) {
+      this._set("v-winddir", Math.round(w.dir) + "°");
+      const arrow = this.shadowRoot.getElementById("windArrow");
+      if (arrow) arrow.setAttribute("transform", `rotate(${w.dir} 50 50)`);
+    }
+  }
+
   _renderCurrentWeather() {
     if (!this._forecast || !this._forecast.current) return;
     const c = this._forecast.current;
@@ -449,12 +482,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const descMap = { clear: "Klart", cloudy: "Delvis molnigt", rain: "Regn", snow: "Snöfall", fog: "Dimma" };
     this._set("w-desc", descMap[wcode] || "–");
 
-    const dir = c.wind_direction_10m;
-    const arrow = this.shadowRoot.getElementById("windArrow");
-    if (arrow && typeof dir === "number") arrow.setAttribute("transform", `rotate(${dir} 50 50)`);
-    this._set("v-winddir", Math.round(dir) + "°");
-    this._set("v-windspeed", this._fmt(c.wind_speed_10m, 1, " m/s"));
-    this._set("w-wind", this._fmt(c.wind_speed_10m, 1, " m/s"));
+    if (!this._stationWind()) {
+      const dir = c.wind_direction_10m;
+      const arrow = this.shadowRoot.getElementById("windArrow");
+      if (arrow && typeof dir === "number") arrow.setAttribute("transform", `rotate(${dir} 50 50)`);
+      this._set("v-winddir", Math.round(dir) + "°");
+      this._set("v-windspeed", this._fmt(c.wind_speed_10m, 1, " m/s"));
+      this._set("w-wind", this._fmt(c.wind_speed_10m, 1, " m/s"));
+    }
     this._set("v-sens-press", this._fmt(c.surface_pressure, 0, " hPa"));
 
     // Prefer real weather station values where available; fall back to open-meteo
@@ -464,6 +499,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _update() {
     const hass = this._hass;
     if (!hass) return;
+    this._applyStationWind();
 
     const solar = (this._num("fronius_power", 0)) / 1000;
     const zaptec = (this._num("zaptec_power", 0)) / 1000;

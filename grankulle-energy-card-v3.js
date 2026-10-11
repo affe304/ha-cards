@@ -169,8 +169,42 @@ class GrankulleEnergyCardV3 extends HTMLElement {
   }
 
   // ---------- live data update ----------
+  // Wind from your own weather station (Tempest), converted to m/s. Falls back to Open-Meteo.
+  _stationWind() {
+    const h = this._hass;
+    if (!h) return null;
+    const ent = (this._config && this._config.entities) || {};
+    const toMs = (st) => {
+      if (!st) return null;
+      const v = parseFloat(st.state);
+      if (!isFinite(v)) return null;
+      const u = String((st.attributes && st.attributes.unit_of_measurement) || '').toLowerCase();
+      if (u === 'km/h' || u === 'kph') return v / 3.6;
+      if (u === 'mph') return v * 0.44704;
+      if (u === 'kn' || u === 'kt' || u === 'knots') return v * 0.514444;
+      return v;
+    };
+    const sp = toMs(h.states[ent.weather_wind || 'sensor.st_00150138_genomsnittlig_vindhastighet']);
+    if (sp === null) return null;
+    const dSt = h.states[ent.weather_wind_dir || 'sensor.st_00150138_vindriktning'];
+    const dir = dSt ? parseFloat(dSt.state) : NaN;
+    return { ms: sp, gust: toMs(h.states[ent.weather_wind_gust || 'sensor.st_00150138_vindby']), dir: isFinite(dir) ? dir : null };
+  }
+  _applyStationWind() {
+    const w = this._stationWind();
+    if (!w) return;
+    const speedEl = this.shadowRoot.getElementById('c-wind-speed');
+    if (speedEl) speedEl.innerHTML = w.ms.toFixed(1) + '<small>m/s</small>';
+    if (w.dir !== null) {
+      this._set('c-wind-dir', Math.round(w.dir) + '\u00b0' + (w.gust !== null ? ' \u00b7 by ' + w.gust.toFixed(1) + ' m/s' : ''));
+      const arrow = this.shadowRoot.getElementById('c-wind-arrow');
+      if (arrow) arrow.setAttribute('transform', 'rotate(' + w.dir + ' 30 30)');
+    }
+  }
+
   _update() {
     if (!this._hass) return;
+    this._applyStationWind();
 
     // Victron battery
     const soc = this._num('battery_soc', 0);
@@ -573,7 +607,7 @@ class GrankulleEnergyCardV3 extends HTMLElement {
     const forecastUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
       '&current=weather_code,wind_speed_10m,wind_direction_10m' +
       '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum' +
-      '&timezone=auto&forecast_days=5';
+      '&wind_speed_unit=ms&timezone=auto&forecast_days=5';
     fetch(forecastUrl)
       .then(r => r.json())
       .then(data => {
@@ -584,15 +618,16 @@ class GrankulleEnergyCardV3 extends HTMLElement {
         this._set('sceneSub', seasonDesc[season] + ' \u00b7 ' + weatherText + ' just nu');
         spawnParticles(decideParticleType(season, weather));
 
-        // wind compass
-        const dir = data.current && data.current.wind_direction_10m;
-        const speed = data.current && data.current.wind_speed_10m;
-        const arrow = this.shadowRoot.getElementById('c-wind-arrow');
-        if (arrow && typeof dir === 'number') arrow.setAttribute('transform', 'rotate(' + dir + ' 30 30)');
-        this._set('c-wind-speed', '');
-        const speedEl = this.shadowRoot.getElementById('c-wind-speed');
-        if (speedEl) speedEl.innerHTML = (typeof speed === 'number' ? speed.toFixed(1) : '\u2013') + '<small>m/s</small>';
-        this._set('c-wind-dir', (typeof dir === 'number' ? Math.round(dir) : '\u2013') + '\u00b0');
+        // wind compass (only if no station wind is available; _applyStationWind handles the station)
+        if (!this._stationWind()) {
+          const dir = data.current && data.current.wind_direction_10m;
+          const speed = data.current && data.current.wind_speed_10m;
+          const arrow = this.shadowRoot.getElementById('c-wind-arrow');
+          if (arrow && typeof dir === 'number') arrow.setAttribute('transform', 'rotate(' + dir + ' 30 30)');
+          const speedEl = this.shadowRoot.getElementById('c-wind-speed');
+          if (speedEl) speedEl.innerHTML = (typeof speed === 'number' ? speed.toFixed(1) : '\u2013') + '<small>m/s</small>';
+          this._set('c-wind-dir', (typeof dir === 'number' ? Math.round(dir) : '\u2013') + '\u00b0');
+        }
 
         // 5-day forecast row
         const forecastEl = this.shadowRoot.getElementById('c-forecast');
