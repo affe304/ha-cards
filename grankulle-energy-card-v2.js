@@ -380,7 +380,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const zs = this._st("zaptec_status");
     const zp = this._num("zaptec_power", 0);
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
-    const evTxt = evSoc2 !== null ? " · V60 " + Math.round(evSoc2) + "%" + (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "") : "";
+    const evTxt = evSoc2 !== null ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "";
     this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
     this._markActive("c-zaptec-modes", "mode", zm ? zm.state : "");
@@ -551,8 +551,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const v60 = this.shadowRoot.getElementById("tag-v60");
     if (v60) v60.style.display = evSoc === null ? "none" : "";
     const evCh = this._st("ev_charging");
-    this._set("tag-l-v60", "V60" + (evCh && evCh.state === "on" ? " · LADDAR" : ""));
-    this._set("tag-v-v60", evSoc === null ? "–" : Math.round(evSoc) + " %" + (evTgt2 !== null ? " → " + Math.round(evTgt2) + " %" : ""));
+    const evStObj = this._st("ev_soc");
+    const evAgeMs = evStObj && evStObj.last_updated ? Date.now() - Date.parse(evStObj.last_updated) : 0;
+    const evStale = evAgeMs > 3 * 3600 * 1000;
+    const ageTxt = evAgeMs >= 86400000 ? Math.floor(evAgeMs / 86400000) + " d" : Math.floor(evAgeMs / 3600000) + " h";
+    if (v60) v60.style.opacity = evStale ? "0.7" : "";
+    this._set("tag-l-v60", evStale ? "V60 · DATA " + ageTxt + " GAMMAL" : "V60" + (evCh && evCh.state === "on" ? " · LADDAR" : ""));
+    this._set("tag-v-v60", evSoc === null ? "–" : (evStale ? "≈ " : "") + Math.round(evSoc) + " %" + (!evStale && evTgt2 !== null ? " → " + Math.round(evTgt2) + " %" : ""));
+    this._v60stale = evStale; this._v60age = ageTxt;
 
     const pct = clamp(battSoc, 0, 100);
     const el = this.shadowRoot.getElementById("battRing");
