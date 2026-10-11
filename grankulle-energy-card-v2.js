@@ -256,7 +256,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="controls-head" data-action="toggle-controls"><span>🎛️ Styrning</span><button class="cbtn close" aria-label="Fäll ihop/ut">▾</button></div>
           <div class="controls-grid">
             <section>
-              <h4>Zaptec · 3-fas</h4>
+              <h4>Zaptec</h4>
               <div class="cstat" id="c-zaptec-status">–</div>
               <div class="crow">
                 <button class="cbtn" data-action="zaptec-on">Starta laddning</button>
@@ -268,14 +268,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
                 <button class="cbtn" data-action="mode-zaptec" data-mode="sol_plus_lite">Sol + lite</button>
                 <button class="cbtn" data-action="mode-zaptec" data-mode="billig_el">Billig el</button>
                 <button class="cbtn" data-action="mode-zaptec" data-mode="ladda_direkt">Ladda direkt</button>
-              </div>
-              <div class="clabel">Fas <span id="c-zaptec-phase"></span></div>
-              <div class="crow">
-                <span id="c-fas-pair" style="display:contents">
-                  <button class="cbtn" data-action="zaptec-phase" data-phase="1">1-fas</button>
-                  <button class="cbtn" data-action="zaptec-phase" data-phase="3">3-fas</button>
-                </span>
-                <button class="cbtn" id="c-fas-auto" data-action="zaptec-autofas">Auto: –</button>
               </div>
             </section>
             <section>
@@ -330,8 +322,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "mode-zaptec") this._select("zaptec_mode", t.dataset.mode);
       else if (a === "mode-1fas") this._select("ev_1fas_mode", t.dataset.mode);
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
-      else if (a === "zaptec-phase") this._zaptecPhase(parseInt(t.dataset.phase, 10));
-      else if (a === "zaptec-autofas") this._svc("input_boolean", "toggle", "zaptec_auto_fas");
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
@@ -361,10 +351,17 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _select(key, option) {
     this._svc("input_select", "select_option", key, { option });
   }
-  _zaptec(on) {
-    const sw = this._st("zaptec_charge_switch");
-    if (sw && sw.state !== "unavailable") this._svc("switch", on ? "turn_on" : "turn_off", "zaptec_charge_switch");
-    else this._svc("button", "press", on ? "zaptec_btn_resume" : "zaptec_btn_stop");
+  async _zaptec(on) {
+    // pause/resume via installation current limit (0 A = pause, 16 A = resume); stop/resume buttons are unreliable on Zaptec Go 1
+    if (!this._hass) return;
+    try {
+      if (!this._zInst) {
+        const devs = await this._hass.callWS({ type: "config/device_registry/list" });
+        const d = devs.find((x) => x.model === "Zaptec Installation");
+        this._zInst = d && d.id;
+      }
+      if (this._zInst) this._hass.callService("zaptec", "limit_current", { device_id: this._zInst, available_current: on ? 16 : 0 });
+    } catch (e) { console.warn("zaptec limit_current failed", e); }
   }
   _hms(minutes) {
     const h = Math.floor(minutes / 60), m = minutes % 60;
@@ -384,10 +381,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _v60Heat(on) {
     const id = this._findVolvoBtn(on);
     if (id && this._hass) this._hass.callService("button", "press", { entity_id: id });
-  }
-  _zaptecPhase(p) {
-    // installation setting "3→1 phase switch current": 32 A forces 1 phase, 0 = 3 phase (same as evcc)
-    this._svc("number", "set_value", "zaptec_phase_sw", { value: p === 1 ? 32 : 0 });
   }
   _valveIsOn() {
     const v = this._st("water_valve");
@@ -443,15 +436,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const s1 = this._st("shelly1");
     this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
 
-    const psw = this._st("zaptec_phase_sw");
-    const swv = psw ? parseFloat(psw.state) : NaN;
-    const oneP = isFinite(swv) && swv >= 20;
-    this._set("c-zaptec-phase", psw ? "· " + (oneP ? "1-fas aktiv" : "3-fas") : "· ej tillgänglig");
-    this._markActive("c-fas-pair", "phase", psw ? (oneP ? "1" : "3") : "");
-    const fa = this._st("zaptec_auto_fas");
-    this._set("c-fas-auto", "Auto: " + (fa ? (fa.state === "on" ? "PÅ" : "AV") : "–"));
-    const faBtn = this.shadowRoot.getElementById("c-fas-auto");
-    if (faBtn) faBtn.classList.toggle("active", !!fa && fa.state === "on");
     const heatOn = this._findVolvoBtn(true);
     const sec = this.shadowRoot.getElementById("c-v60-sec");
     if (sec) sec.style.display = heatOn ? "" : "none";
