@@ -44,10 +44,10 @@ const DEFAULT_ENTITIES = {
   greenhouse_humidity: null,
 
   water_valve: "cover.shellyplus2pm_30c9228094c0",
+  water_timer: "timer.vattenventil",
   shelly1: "switch.shelly1_c45bbe7774e8",
   shelly2: "switch.shellyplug_s_4022d882ea60",
   shelly2_power: "sensor.shellyplug_s_4022d882ea60_effekt",
-  tado_climate: "climate.air_conditioning_air_conditioning",
   zaptec_charge_switch: "switch.zaptec_laddar",
   zaptec_status: "sensor.zaptec_laddstatus",
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
@@ -192,7 +192,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
-        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:49%; top:55%; cursor:pointer;">
+        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
           <div class="tag-lbl">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
         </div>
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
@@ -273,21 +273,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
               </div>
             </section>
             <section>
-              <h4>Värmepump · Tado</h4>
-              <div class="cstat" id="c-tado-status">–</div>
-              <div class="crow" id="c-tado-modes">
-                <button class="cbtn" data-action="tado-mode" data-mode="off">Av</button>
-                <button class="cbtn" data-action="tado-mode" data-mode="auto">Auto</button>
-                <button class="cbtn" data-action="tado-mode" data-mode="cool">Kyla</button>
-                <button class="cbtn" data-action="tado-mode" data-mode="heat">Värme</button>
-              </div>
-              <div class="crow">
-                <button class="cbtn" data-action="tado-down" aria-label="Sänk">−</button>
-                <span class="ctemp" id="c-tado-target">–</span>
-                <button class="cbtn" data-action="tado-up" aria-label="Höj">+</button>
-              </div>
-            </section>
-            <section>
               <h4>Shelly 1</h4>
               <div class="crow"><button class="cbtn" id="c-shelly1" data-action="toggle-shelly1">–</button></div>
             </section>
@@ -321,9 +306,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "mode-1fas") this._select("ev_1fas_mode", t.dataset.mode);
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
       else if (a === "toggle-hose") this._setValve(this._valveOffAt ? 0 : 30);
-      else if (a === "tado-mode") this._tadoMode(t.dataset.mode);
-      else if (a === "tado-up") this._tadoStep(1);
-      else if (a === "tado-down") this._tadoStep(-1);
     });
 
     this._tickClock();
@@ -350,25 +332,28 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (sw && sw.state !== "unavailable") this._svc("switch", on ? "turn_on" : "turn_off", "zaptec_charge_switch");
     else this._svc("button", "press", on ? "zaptec_btn_resume" : "zaptec_btn_stop");
   }
-  _tadoMode(mode) { this._svc("climate", "set_hvac_mode", "tado_climate", { hvac_mode: mode }); }
-  _tadoStep(delta) {
-    const st = this._st("tado_climate");
-    if (!st) return;
-    const cur = parseFloat(st.attributes.temperature);
-    if (isNaN(cur)) return;
-    const next = Math.round(cur + delta);
-    this._set("c-tado-target", next.toFixed(0) + " °C");
-    this._svc("climate", "set_temperature", "tado_climate", { temperature: next });
+  _hms(minutes) {
+    const h = Math.floor(minutes / 60), m = minutes % 60;
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00";
   }
+  // The countdown lives in Home Assistant (timer.vattenventil + automations), so the valve
+  // closes by itself no matter where it was opened from or whether this browser stays open.
   _setValve(minutes) {
+    const hasTimer = !!this._st("water_timer");
     if (this._valveTimeout) { clearTimeout(this._valveTimeout); this._valveTimeout = null; }
     if (minutes === 0) {
       this._valveOffAt = null;
+      if (hasTimer) this._svc("timer", "cancel", "water_timer");
       this._svc("cover", "close_cover", "water_valve");
     } else {
-      this._valveOffAt = Date.now() + minutes * 60000;
+      if (hasTimer) {
+        this._svc("timer", "start", "water_timer", { duration: this._hms(minutes) });
+      } else {
+        // fallback when the HA timer helper is missing: browser-only timer
+        this._valveOffAt = Date.now() + minutes * 60000;
+        this._valveTimeout = setTimeout(() => this._setValve(0), minutes * 60000);
+      }
       this._svc("cover", "open_cover", "water_valve");
-      this._valveTimeout = setTimeout(() => this._setValve(0), minutes * 60000);
     }
     this._updateControls();
   }
@@ -398,25 +383,24 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
 
     const v = this._st("water_valve");
-    const open = v && (v.state === "open" || v.state === "opening");
+    const open = !!v && (v.state === "open" || v.state === "opening");
+    const wt = this._st("water_timer");
     let vt = v ? (open ? "På" : "Av") : "–";
-    if (open && this._valveOffAt) {
-      const rem = Math.max(0, this._valveOffAt - Date.now());
-      vt += " · stänger om " + Math.floor(rem / 60000) + " min " + String(Math.floor((rem % 60000) / 1000)).padStart(2, "0") + " s";
+    let remMs = null, durMin = null;
+    if (wt && wt.state === "active" && wt.attributes.finishes_at) {
+      remMs = Math.max(0, new Date(wt.attributes.finishes_at).getTime() - Date.now());
+      const dp = String(wt.attributes.duration || "").split(":").map(Number);
+      if (dp.length >= 2) durMin = dp[0] * 60 + dp[1];
+    } else if (!wt && this._valveOffAt) {
+      remMs = Math.max(0, this._valveOffAt - Date.now());
+    }
+    if (open && remMs !== null) {
+      vt += " · stänger om " + Math.floor(remMs / 60000) + " min " + String(Math.floor((remMs % 60000) / 1000)).padStart(2, "0") + " s";
     } else if (open) {
-      vt += " · ingen timer (stäng manuellt)";
+      vt += " · ingen timer";
     }
     this._set("c-valve-status", vt);
-    this._markActive("c-valve-btns", "minutes", open ? (this._valveOffAt ? String(Math.round((this._valveOffAt - Date.now()) / 60000 / 30) * 30) : "") : "0");
-
-    const t = this._st("tado_climate");
-    if (t) {
-      const cur = parseFloat(t.attributes.current_temperature);
-      this._set("c-tado-status", t.state + (isNaN(cur) ? "" : " · nu " + cur.toFixed(1) + " °C"));
-      const tgt = parseFloat(t.attributes.temperature);
-      this._set("c-tado-target", isNaN(tgt) ? "–" : tgt.toFixed(0) + " °C");
-      this._markActive("c-tado-modes", "mode", t.state);
-    } else this._set("c-tado-status", "–");
+    this._markActive("c-valve-btns", "minutes", open ? (durMin !== null ? String(durMin) : "") : "0");
   }
 
   _tickClock() {
@@ -655,28 +639,28 @@ const STYLE = `
   .nav-item.ctl { cursor: pointer; background: rgba(240,168,60,0.18); opacity: 1; font-weight: 700; }
   .tag[data-action] { cursor: pointer; }
   .controls {
-    position: absolute; left: 20%; right: 20%; top: 8%; z-index: 5;
+    position: absolute; right: 1.2%; top: 12%; width: 24%; max-height: 72%; z-index: 5;
     background: rgba(8, 14, 12, 0.93); backdrop-filter: blur(6px);
-    border-radius: 14px; padding: 1.2% 1.6%; font-size: 0.85vw;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.6); max-height: 80%; overflow: auto;
+    border-radius: 14px; padding: 1% 1.1%; font-size: 0.8vw;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: auto; box-sizing: border-box;
   }
   .controls-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 1.1vw; margin-bottom: 0.8vw; }
-  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw 1.6vw; }
-  .controls section { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.8vw 1vw; }
+  .controls-grid { display: grid; grid-template-columns: 1fr; gap: 0.6vw; }
+  .controls section { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6vw 0.8vw; }
   .controls h4 { margin: 0 0 0.4vw; font-size: 0.8vw; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
   .cstat { font-weight: 600; margin-bottom: 0.5vw; }
   .clabel { font-size: 0.6vw; opacity: 0.6; margin: 0.4vw 0 0.2vw; text-transform: uppercase; letter-spacing: 1px; }
   .crow { display: flex; flex-wrap: wrap; gap: 0.4vw; margin-bottom: 0.4vw; align-items: center; }
   .cbtn {
-    font: inherit; color: #fff; cursor: pointer;
+    font: inherit; font-size: 0.75vw; color: #fff; cursor: pointer;
     background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 8px; padding: 0.4vw 0.8vw; min-height: 2vw;
+    border-radius: 8px; padding: 0.3vw 0.6vw; min-height: 1.8vw;
   }
   .cbtn:hover { background: rgba(255,255,255,0.2); }
   .cbtn.active { background: rgba(61,220,132,0.3); border-color: #3ddc84; font-weight: 700; }
   .cbtn.close { padding: 0.2vw 0.7vw; }
   .ctemp { font-weight: 800; font-size: 1.2vw; min-width: 4vw; text-align: center; }
-  @media (max-width: 900px) { .controls { left: 3%; right: 3%; } .controls-grid { grid-template-columns: 1fr; } .controls, .cbtn, .controls h4 { font-size: 13px; } .controls-head { font-size: 16px; } .ctemp { font-size: 18px; } .cbtn { min-height: 36px; padding: 6px 12px; } }
+  @media (max-width: 900px) { .controls { left: 3%; right: 3%; width: auto; top: 8%; bottom: auto; max-height: 80%; } .controls, .cbtn, .controls h4 { font-size: 13px; } .controls-head { font-size: 16px; } .ctemp { font-size: 18px; } .cbtn { min-height: 36px; padding: 6px 12px; } }
   @media (max-width: 700px) {
     .panel, .tag { font-size: 11px; }
     .h1 { font-size: 16px; } .sub { font-size: 9px; }
