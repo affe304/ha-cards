@@ -273,6 +273,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
                 <button class="cbtn" data-action="mode-1fas" data-mode="ladda_direkt">Ladda direkt</button>
               </div>
             </section>
+            <section id="c-v60-sec" style="display:none">
+              <h4>V60 · Förvärm</h4>
+              <div class="cstat" id="c-v60-status">–</div>
+              <div class="crow">
+                <button class="cbtn" data-action="v60-heat-on">Starta värme</button>
+                <button class="cbtn" data-action="v60-heat-off">Stoppa</button>
+              </div>
+            </section>
             <section>
               <h4>Vattenventil</h4>
               <div class="cstat" id="c-valve-status">–</div>
@@ -305,6 +313,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "mode-zaptec") this._select("zaptec_mode", t.dataset.mode);
       else if (a === "mode-1fas") this._select("ev_1fas_mode", t.dataset.mode);
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
+      else if (a === "v60-heat-on") this._v60Heat(true);
+      else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
@@ -343,6 +353,19 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   }
   // The countdown lives in Home Assistant (timer.vattenventil + automations), so the valve
   // closes by itself no matter where it was opened from or whether this browser stays open.
+  // Volvo preconditioning buttons (from the official HA "Volvo" integration), auto-discovered by name
+  _findVolvoBtn(on) {
+    const cfgKey = on ? "v60_heat_on" : "v60_heat_off";
+    const ent = (this._config && this._config.entities) || {};
+    if (ent[cfgKey]) return ent[cfgKey];
+    const h = this._hass; if (!h) return null;
+    const re = on ? /(start|starta).*(climat|klimat)|(climat|klimat).*(start|starta)/i : /(stop|stoppa).*(climat|klimat)|(climat|klimat).*(stop|stoppa)/i;
+    return Object.keys(h.states).find((k) => k.startsWith("button.") && re.test(k)) || null;
+  }
+  _v60Heat(on) {
+    const id = this._findVolvoBtn(on);
+    if (id && this._hass) this._hass.callService("button", "press", { entity_id: id });
+  }
   _valveIsOn() {
     const v = this._st("water_valve");
     return !!v && (v.state === "open" || v.state === "opening");
@@ -397,6 +420,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const s1 = this._st("shelly1");
     this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
 
+    const heatOn = this._findVolvoBtn(true);
+    const sec = this.shadowRoot.getElementById("c-v60-sec");
+    if (sec) sec.style.display = heatOn ? "" : "none";
+    if (heatOn) {
+      const hb = this._hass.states[heatOn];
+      this._set("c-v60-status", hb && hb.state === "unavailable" ? "ej tillgänglig" : "Förvärm kupén");
+    }
     const v = this._st("water_valve");
     const open = !!v && (v.state === "open" || v.state === "opening");
     const wt = this._st("water_timer");
