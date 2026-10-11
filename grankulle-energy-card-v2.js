@@ -232,8 +232,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row small"><span>☀️ UV-index</span><b id="v-sens-uv">–</b></div>
         </div>
 
-        <div class="controls" id="controls" style="display:none">
-          <div class="controls-head"><span>Styrning</span><button class="cbtn close" data-action="toggle-controls" aria-label="Stäng">✕</button></div>
+        <div class="controls" id="controls">
+          <div class="controls-head" data-action="toggle-controls"><span>🎛️ Styrning</span><button class="cbtn close" aria-label="Fäll ihop/ut">▾</button></div>
           <div class="controls-grid">
             <section>
               <h4>Zaptec · 3-fas</h4>
@@ -310,14 +310,19 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
     this._tickClock();
     setInterval(() => this._tickClock(), 30000);
-    setInterval(() => { const c = this.shadowRoot.getElementById("controls"); if (c && c.style.display !== "none") this._updateControls(); }, 1000);
+    if (window.innerWidth < 900) this._toggleControls();
+    this._updateControls();
+    setInterval(() => this._updateControls(), 1000);
   }
 
 
   // ---------- controls ----------
   _toggleControls() {
     const el = this.shadowRoot.getElementById("controls");
-    if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+    if (!el) return;
+    el.classList.toggle("collapsed");
+    const b = el.querySelector(".controls-head .close");
+    if (b) b.textContent = el.classList.contains("collapsed") ? "▸" : "▾";
   }
   _svc(domain, service, key, extra) {
     const id = this._e(key);
@@ -674,27 +679,34 @@ const STYLE = `
 
   .nav-item.ctl { cursor: pointer; background: rgba(240,168,60,0.18); opacity: 1; font-weight: 700; }
   .tag[data-action] { cursor: pointer; }
+  .tag { z-index: 6; }
   .controls {
-    position: absolute; right: 1.2%; top: 12%; width: 24%; max-height: 72%; z-index: 5;
-    background: rgba(8, 14, 12, 0.93); backdrop-filter: blur(6px);
-    border-radius: 14px; padding: 1% 1.1%; font-size: 0.8vw;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.6); overflow: auto; box-sizing: border-box;
+    position: absolute; right: 1%; top: 13%; width: 27%; max-height: 62%; z-index: 5;
+    background: rgba(8, 14, 12, 0.42); backdrop-filter: blur(3px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; padding: 0.55vw 0.7vw; font-size: max(10px,0.7vw);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35); overflow: auto; box-sizing: border-box;
+    transition: background .2s;
   }
-  .controls-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 1.1vw; margin-bottom: 0.8vw; }
-  .controls-grid { display: grid; grid-template-columns: 1fr; gap: 0.6vw; }
-  .controls section { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.6vw 0.8vw; }
-  .controls h4 { margin: 0 0 0.4vw; font-size: 0.8vw; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
-  .cstat { font-weight: 600; margin-bottom: 0.5vw; }
-  .clabel { font-size: 0.6vw; opacity: 0.6; margin: 0.4vw 0 0.2vw; text-transform: uppercase; letter-spacing: 1px; }
-  .crow { display: flex; flex-wrap: wrap; gap: 0.4vw; margin-bottom: 0.4vw; align-items: center; }
+  .controls:hover { background: rgba(8, 14, 12, 0.78); }
+  .controls.collapsed { width: auto; }
+  .controls.collapsed .controls-grid { display: none; }
+  .controls.collapsed .controls-head { margin-bottom: 0; gap: 0.8vw; }
+  .controls-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: max(12px,0.85vw); margin-bottom: 0.4vw; cursor: pointer; }
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4vw; }
+  .controls section { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 0.35vw 0.5vw; }
+  .controls h4 { margin: 0 0 0.2vw; font-size: max(9px,0.6vw); letter-spacing: 0.8px; text-transform: uppercase; opacity: 0.75; }
+  .cstat { font-weight: 600; font-size: max(10.5px,0.68vw); margin-bottom: 0.25vw; }
+  .clabel { font-size: max(8.5px,0.5vw); opacity: 0.6; margin: 0.2vw 0 0.1vw; text-transform: uppercase; letter-spacing: 1px; }
+  .crow { display: flex; flex-wrap: wrap; gap: 0.25vw; margin-bottom: 0.25vw; align-items: center; }
   .cbtn {
-    font: inherit; font-size: 0.75vw; color: #fff; cursor: pointer;
-    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 8px; padding: 0.3vw 0.6vw; min-height: 1.8vw;
+    font: inherit; font-size: max(10px,0.62vw); color: #fff; cursor: pointer;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px; padding: 0.2vw 0.4vw; min-height: 1.3vw;
   }
   .cbtn:hover { background: rgba(255,255,255,0.2); }
   .cbtn.active { background: rgba(61,220,132,0.3); border-color: #3ddc84; font-weight: 700; }
-  .cbtn.close { padding: 0.2vw 0.7vw; }
+  .cbtn.close { padding: 0.05vw 0.4vw; min-height: 0; }
   .ctemp { font-weight: 800; font-size: 1.2vw; min-width: 4vw; text-align: center; }
   @media (max-width: 900px) { .controls { left: 3%; right: 3%; width: auto; top: 8%; bottom: auto; max-height: 80%; } .controls, .cbtn, .controls h4 { font-size: 13px; } .controls-head { font-size: 16px; } .ctemp { font-size: 18px; } .cbtn { min-height: 36px; padding: 6px 12px; } }
   @media (max-width: 700px) {
