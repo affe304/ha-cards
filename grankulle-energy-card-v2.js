@@ -52,6 +52,7 @@ const DEFAULT_ENTITIES = {
   zaptec_status: "sensor.zaptec_laddstatus",
   ev_soc: "sensor.v60_laddningsniva_soc",
   ev_soc_target: "sensor.v60_malladdningsniva",
+  ev_charging: "binary_sensor.v60_laddning",
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
@@ -200,7 +201,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
-          <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+          <div class="tag-lbl">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+        </div>
+        <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
+          <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
         </div>
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
           <div class="tag-lbl">VÄXTHUS</div><div class="tag-val" id="tag-v-greenhouse">–</div>
@@ -542,8 +546,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._sgn(battPower, 2, " kW"));
     this._set("tag-v-grid", this._sgn(grid, 2, " kW"));
     const evSoc = this._num("ev_soc");
-    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW") + (evSoc !== null ? " · " + Math.round(evSoc) + "%" : ""));
-    this._set("tag-l-ev", evSoc !== null ? "V60 · LADDBOX" : "LADDBOX");
+    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
+    const evTgt2 = this._num("ev_soc_target");
+    const v60 = this.shadowRoot.getElementById("tag-v60");
+    if (v60) v60.style.display = evSoc === null ? "none" : "";
+    const evCh = this._st("ev_charging");
+    this._set("tag-l-v60", "V60" + (evCh && evCh.state === "on" ? " · LADDAR" : ""));
+    this._set("tag-v-v60", evSoc === null ? "–" : Math.round(evSoc) + " %" + (evTgt2 !== null ? " → " + Math.round(evTgt2) + " %" : ""));
 
     const pct = clamp(battSoc, 0, 100);
     const el = this.shadowRoot.getElementById("battRing");
