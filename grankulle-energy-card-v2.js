@@ -50,6 +50,8 @@ const DEFAULT_ENTITIES = {
   shelly2_power: "sensor.shellyplug_s_4022d882ea60_effekt",
   zaptec_charge_switch: "switch.zaptec_laddar",
   zaptec_status: "sensor.zaptec_laddstatus",
+  ev_soc: "sensor.v60_laddningsniva_soc",
+  ev_soc_target: "sensor.v60_malladdningsniva",
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
@@ -111,6 +113,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const el = this.shadowRoot.getElementById(id);
     if (el) el.textContent = text;
   }
+  _sgn(n, decimals = 2, suffix = "") {
+    if (n === null || n === undefined || !isFinite(n)) return "–";
+    const r = Number(n.toFixed(decimals));
+    return (r > 0 ? "+" : "") + r.toFixed(decimals) + suffix;
+  }
   _fmt(n, decimals = 1, suffix = "") {
     if (n === null || n === undefined || Number.isNaN(n)) return "–";
     return n.toFixed(decimals) + suffix;
@@ -148,7 +155,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row"><span>☀️ Självförsörjning</span><b id="v-selfsuff">–%</b></div>
           <div class="row"><span>🔆 Solproduktion</span><b id="v-solar">– kW</b></div>
           <div class="row"><span>🏠 Husförbrukning</span><b id="v-house">– kW</b></div>
-          <div class="row"><span>🔋 Batteri</span><b id="v-batt">–% · – kW</b></div>
+          <div class="row"><span>🔋 Husbatteri</span><b id="v-batt">–% · – kW</b></div>
           <div class="row"><span>⚡ Nät</span><b id="v-grid">– kW</b></div>
         </div>
 
@@ -159,7 +166,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <div class="panel batt">
-          <div class="panel-title">Batteri status</div>
+          <div class="panel-title">Husbatteri</div>
           <svg viewBox="0 0 120 120" class="gauge">
             <circle cx="60" cy="60" r="50" fill="none" stroke="#ffffff22" stroke-width="10"/>
             <circle id="battRing" cx="60" cy="60" r="50" fill="none" stroke="#3ddc84" stroke-width="10"
@@ -187,13 +194,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-lbl">HUSFÖRBRUKNING</div><div class="tag-val" id="tag-v-house">– kW</div>
         </div>
         <div class="tag green" id="tag-batt" style="left:59%; top:46%;">
-          <div class="tag-lbl">BATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
+          <div class="tag-lbl">HUSBATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
         </div>
         <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
-          <div class="tag-lbl">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+          <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
         </div>
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
           <div class="tag-lbl">VÄXTHUS</div><div class="tag-val" id="tag-v-greenhouse">–</div>
@@ -368,7 +375,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const ZSTAT = { connected_charging: "Laddar", connected_finished: "Laddning klar", connected_requesting: "Väntar på start", disconnected: "Ej ansluten" };
     const zs = this._st("zaptec_status");
     const zp = this._num("zaptec_power", 0);
-    this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW")) : "–");
+    const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
+    const evTxt = evSoc2 !== null ? " · V60 " + Math.round(evSoc2) + "%" + (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "") : "";
+    this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
     this._markActive("c-zaptec-modes", "mode", zm ? zm.state : "");
     if (!zm) this._set("c-zaptec-status", (zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW")) : "–") + " · läge saknas");
@@ -525,14 +534,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("v-selfsuff", selfSuff + "%");
     this._set("v-solar", this._fmt(solar, 2, " kW"));
     this._set("v-house", this._fmt(house, 2, " kW"));
-    this._set("v-batt", Math.round(battSoc) + "% · " + this._fmt(battPower, 2, " kW"));
-    this._set("v-grid", this._fmt(grid, 2, " kW"));
+    this._set("v-batt", Math.round(battSoc) + "% · " + this._sgn(battPower, 2, " kW"));
+    this._set("v-grid", this._sgn(grid, 2, " kW"));
 
     this._set("tag-v-solar", this._fmt(solar, 2, " kW"));
     this._set("tag-v-house", this._fmt(house, 2, " kW"));
-    this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._fmt(battPower, 2, " kW"));
-    this._set("tag-v-grid", this._fmt(grid, 2, " kW"));
-    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
+    this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._sgn(battPower, 2, " kW"));
+    this._set("tag-v-grid", this._sgn(grid, 2, " kW"));
+    const evSoc = this._num("ev_soc");
+    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW") + (evSoc !== null ? " · " + Math.round(evSoc) + "%" : ""));
+    this._set("tag-l-ev", evSoc !== null ? "V60 · LADDBOX" : "LADDBOX");
 
     const pct = clamp(battSoc, 0, 100);
     const el = this.shadowRoot.getElementById("battRing");
