@@ -279,17 +279,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </div>
         </div>
 
-        <div class="navbar">
-          <div class="nav-item active">🏠 Översikt</div>
-          <div class="nav-item">⚡ Energi</div>
-          <div class="nav-item">⛅ Väder</div>
-          <div class="nav-item">🌱 Trädgård</div>
-          <div class="nav-item">🚗 Bilar</div>
-          <div class="nav-item">🔋 Batteri</div>
-          <div class="nav-item">⚡ Tibber</div>
-          <div class="nav-item">📊 Historik</div>
-          <div class="nav-item ctl" data-action="toggle-controls">🎛️ Styrning</div>
-        </div>
       </div>
     `;
 
@@ -305,7 +294,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "mode-zaptec") this._select("zaptec_mode", t.dataset.mode);
       else if (a === "mode-1fas") this._select("ev_1fas_mode", t.dataset.mode);
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
-      else if (a === "toggle-hose") this._setValve(this._valveOffAt ? 0 : 30);
+      else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
     this._tickClock();
@@ -343,6 +332,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   }
   // The countdown lives in Home Assistant (timer.vattenventil + automations), so the valve
   // closes by itself no matter where it was opened from or whether this browser stays open.
+  _valveIsOn() {
+    const v = this._st("water_valve");
+    return !!v && (v.state === "open" || v.state === "opening");
+  }
   _setValve(minutes) {
     const hasTimer = !!this._st("water_timer");
     if (this._valveTimeout) { clearTimeout(this._valveTimeout); this._valveTimeout = null; }
@@ -360,6 +353,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       }
       this._svc("cover", "open_cover", "water_valve");
     }
+    const hv = this.shadowRoot.getElementById("tag-v-hose");
+    if (hv) { hv.textContent = minutes === 0 ? "AV" : "PÅ"; }
+    const ht = this.shadowRoot.getElementById("tag-hose");
+    if (ht) ht.classList.toggle("on", minutes !== 0);
     this._updateControls();
   }
   _markActive(containerId, attr, value) {
@@ -575,7 +572,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._updateControls();
 
     const valveState = this._st("water_valve");
-    const hoseOn = valveState && valveState.state === "open";
+    const hoseOn = valveState && (valveState.state === "open" || valveState.state === "opening");
     this._set("tag-v-hose", hoseOn ? "PÅ" : "AV");
     const hoseTag = this.shadowRoot.getElementById("tag-hose");
     if (hoseTag) hoseTag.classList.toggle("on", !!hoseOn);
@@ -598,20 +595,20 @@ const STYLE = `
   .topbar {
     position: absolute; top: 0; left: 0; right: 0;
     display: flex; align-items: flex-start; justify-content: space-between;
-    padding: 2% 2.5% 0;
+    padding: 0.9% 1.5% 0;
   }
-  .h1 { font-size: 1.5vw; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
-  .sub { font-size: 0.7vw; opacity: 0.85; letter-spacing: 1px; margin-top: 2px; }
-  .weather-now, .mini-stats, .clock-box { background: rgba(8,14,12,0.5); backdrop-filter: blur(3px); border-radius: 10px; padding: 0.5vw 0.9vw; }
+  .h1 { font-size: 1.15vw; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+  .sub { font-size: 0.55vw; opacity: 0.85; letter-spacing: 1px; margin-top: 0; }
+  .weather-now, .mini-stats, .clock-box { background: rgba(8,14,12,0.5); backdrop-filter: blur(3px); border-radius: 8px; padding: 0.25vw 0.6vw; }
   .brand { text-shadow: 0 1px 6px rgba(0,0,0,0.85); }
-  .weather-now { display: flex; align-items: center; gap: 0.6vw; font-size: 1.1vw; }
+  .weather-now { display: flex; align-items: center; gap: 0.4vw; font-size: 0.9vw; }
   .w-desc { font-size: 0.65vw; opacity: 0.85; align-self: center; }
-  .mini-stats { display: flex; gap: 1.2vw; font-size: 0.75vw; }
+  .mini-stats { display: flex; gap: 0.9vw; font-size: 0.65vw; }
   .mini-stats div { display: flex; flex-direction: column; align-items: center; }
-  .mini-stats small { opacity: 0.65; font-size: 0.55vw; letter-spacing: 0.5px; }
+  .mini-stats small { opacity: 0.65; font-size: 0.48vw; letter-spacing: 0.5px; }
   .clock-box { text-align: right; }
-  .clock { font-size: 1.6vw; font-weight: 700; }
-  .clockdate { font-size: 0.65vw; opacity: 0.8; text-transform: capitalize; }
+  .clock { font-size: 1.15vw; font-weight: 700; }
+  .clockdate { font-size: 0.55vw; opacity: 0.8; text-transform: capitalize; }
 
   .panel {
     position: absolute;
@@ -637,7 +634,7 @@ const STYLE = `
   .energy-cols .lbl { display: block; font-size: 0.6vw; opacity: 0.7; }
   .energy-cols b { font-size: 0.9vw; }
 
-  .forecast { left: 19%; bottom: 9%; width: 32%; }
+  .forecast { left: 19%; bottom: 2.5%; width: 32%; }
   .forecast-row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .fday { text-align: center; font-size: 0.65vw; flex: 1; }
   .fday-lbl { opacity: 0.75; }
@@ -646,11 +643,11 @@ const STYLE = `
   .fday-lo { opacity: 0.7; }
   .fday-rain { opacity: 0.55; font-size: 0.55vw; }
 
-  .wind { right: 21%; bottom: 9%; text-align: center; min-width: 0; }
+  .wind { right: 21%; bottom: 2.5%; text-align: center; min-width: 0; }
   .compass { width: 3.6vw; height: 3.6vw; }
   #windArrow { transition: transform 0.6s ease; transform-origin: 50px 50px; }
 
-  .sensors { right: 2%; bottom: 9%; }
+  .sensors { right: 2%; bottom: 2.5%; }
 
   .tag {
     position: absolute;
@@ -681,7 +678,7 @@ const STYLE = `
   .tag[data-action] { cursor: pointer; }
   .tag { z-index: 6; }
   .controls {
-    position: absolute; right: 1%; top: 13%; width: 27%; max-height: 62%; z-index: 5;
+    position: absolute; right: 1%; top: 7.5%; width: 27%; max-height: 62%; z-index: 5;
     background: rgba(8, 14, 12, 0.42); backdrop-filter: blur(3px);
     border: 1px solid rgba(255,255,255,0.12);
     border-radius: 12px; padding: 0.55vw 0.7vw; font-size: max(10px,0.7vw);
