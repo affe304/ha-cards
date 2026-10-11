@@ -1,8 +1,8 @@
 /**
  * Grankulle Energy Card — v2
- * "Photo dashboard": uses a static background photo (your reference image)
- * with real, live Home Assistant data overlaid in styled panels — matching
- * the ChatGPT mockup's look. Trade-off vs v1: the scene itself is a frozen
+ * "Photo dashboard": uses a static, CLEAN background photo (no text/UI baked in)
+ * with real, live Home Assistant data overlaid in styled panels and tags
+ * positioned on the objects in the picture. Trade-off vs v1: the scene itself is a frozen
  * photo (no day/night, no season change, no moving parts) — but the panel
  * numbers are 100% real, live HA data, same as v1.
  *
@@ -17,7 +17,7 @@ const DEFAULT_ENTITIES = {
   battery_power: "sensor.kallare_gx_device_dc_batteri_effekt",
   battery_voltage: "sensor.kallare_gx_device_dc_batteri_spanning",
   battery_current: "sensor.kallare_gx_device_dc_batteri_strom",
-  battery_temp: "sensor.kallare_gx_device_dc_batteri_temperatur",
+  battery_temp: null,
 
   grid_power_l1: "sensor.kallare_gx_device_elnat_effekt_l1",
   grid_power_l2: "sensor.kallare_gx_device_elnat_effekt_l2",
@@ -44,6 +44,17 @@ const DEFAULT_ENTITIES = {
   greenhouse_humidity: null,
 
   water_valve: "cover.shellyplus2pm_30c9228094c0",
+  shelly1: "switch.shelly1_c45bbe7774e8",
+  shelly2: "switch.shellyplug_s_4022d882ea60",
+  shelly2_power: "sensor.shellyplug_s_4022d882ea60_effekt",
+  tado_climate: "climate.air_conditioning_air_conditioning",
+  zaptec_charge_switch: "switch.zaptec_laddar",
+  zaptec_status: "sensor.zaptec_laddstatus",
+  zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
+  zaptec_btn_stop: "button.zaptec_stoppa_laddning",
+  zaptec_mode: "input_select.zaptec_ev_mode",
+  ev_1fas_mode: "input_select.ev_1fas_mode",
+  ev_1fas_status: "binary_sensor.ev_laddning_tillaten_1_fas",
   sun: "sun.sun",
 };
 
@@ -157,7 +168,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </svg>
           <div class="row small"><span>Spänning</span><b id="v-vbatt">– V</b></div>
           <div class="row small"><span>Ström</span><b id="v-ibatt">– A</b></div>
-          <div class="row small"><span>Temperatur</span><b id="v-tbatt">– °C</b></div>
+          <div class="row small" id="row-tbatt"><span>Temperatur</span><b id="v-tbatt">– °C</b></div>
         </div>
 
         <div class="panel energyday">
@@ -169,25 +180,28 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <!-- overlay tags positioned over the photo, matching the reference layout -->
-        <div class="tag" id="tag-solar" style="left:41%; top:27%;">
+        <div class="tag" id="tag-solar" style="left:56%; top:28%;">
           <div class="tag-lbl">SOLPRODUKTION</div><div class="tag-val" id="tag-v-solar">– kW</div>
         </div>
-        <div class="tag" id="tag-house" style="left:36%; top:43%;">
+        <div class="tag" id="tag-house" style="left:42%; top:40%;">
           <div class="tag-lbl">HUSFÖRBRUKNING</div><div class="tag-val" id="tag-v-house">– kW</div>
         </div>
-        <div class="tag green" id="tag-batt" style="left:59%; top:43%;">
+        <div class="tag green" id="tag-batt" style="left:59%; top:46%;">
           <div class="tag-lbl">BATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
         </div>
-        <div class="tag blue" id="tag-grid" style="left:74%; top:43%;">
+        <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
-        <div class="tag green" id="tag-greenhouse" style="right:2%; top:28%;">
+        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:49%; top:55%; cursor:pointer;">
+          <div class="tag-lbl">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+        </div>
+        <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
           <div class="tag-lbl">VÄXTHUS</div><div class="tag-val" id="tag-v-greenhouse">–</div>
         </div>
-        <div class="tag" id="tag-coop" style="right:2%; top:61%;">
+        <div class="tag" id="tag-coop" style="left:87%; top:58%;">
           <div class="tag-lbl">HÖNSHUS</div><div class="tag-val" id="tag-v-coop">–</div>
         </div>
-        <div class="tag blue" id="tag-hose" style="right:9%; top:49%; cursor:pointer;">
+        <div class="tag blue" id="tag-hose" data-action="toggle-hose" style="left:84%; top:52%; cursor:pointer;">
           <div class="tag-lbl">SLANG</div><div class="tag-val" id="tag-v-hose">–</div>
         </div>
 
@@ -218,6 +232,68 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row small"><span>☀️ UV-index</span><b id="v-sens-uv">–</b></div>
         </div>
 
+        <div class="controls" id="controls" style="display:none">
+          <div class="controls-head"><span>Styrning</span><button class="cbtn close" data-action="toggle-controls" aria-label="Stäng">✕</button></div>
+          <div class="controls-grid">
+            <section>
+              <h4>Zaptec · 3-fas</h4>
+              <div class="cstat" id="c-zaptec-status">–</div>
+              <div class="crow">
+                <button class="cbtn" data-action="zaptec-on">Starta laddning</button>
+                <button class="cbtn" data-action="zaptec-off">Stoppa laddning</button>
+              </div>
+              <div class="clabel">Läge</div>
+              <div class="crow" id="c-zaptec-modes">
+                <button class="cbtn" data-action="mode-zaptec" data-mode="endast_sol">Endast sol</button>
+                <button class="cbtn" data-action="mode-zaptec" data-mode="sol_plus_lite">Sol + lite</button>
+                <button class="cbtn" data-action="mode-zaptec" data-mode="billig_el">Billig el</button>
+                <button class="cbtn" data-action="mode-zaptec" data-mode="ladda_direkt">Ladda direkt</button>
+              </div>
+            </section>
+            <section>
+              <h4>EV 1-fas · Shelly-plugg</h4>
+              <div class="cstat" id="c-1fas-status">–</div>
+              <div class="crow"><button class="cbtn" id="c-shelly2" data-action="toggle-shelly2">–</button></div>
+              <div class="clabel">Läge</div>
+              <div class="crow" id="c-1fas-modes">
+                <button class="cbtn" data-action="mode-1fas" data-mode="endast_sol">Endast sol</button>
+                <button class="cbtn" data-action="mode-1fas" data-mode="sol_plus_lite">Sol + lite</button>
+                <button class="cbtn" data-action="mode-1fas" data-mode="billig_el">Billig el</button>
+                <button class="cbtn" data-action="mode-1fas" data-mode="ladda_direkt">Ladda direkt</button>
+              </div>
+            </section>
+            <section>
+              <h4>Vattenventil</h4>
+              <div class="cstat" id="c-valve-status">–</div>
+              <div class="crow" id="c-valve-btns">
+                <button class="cbtn" data-action="valve" data-minutes="0">Av</button>
+                <button class="cbtn" data-action="valve" data-minutes="30">30 min</button>
+                <button class="cbtn" data-action="valve" data-minutes="60">1 tim</button>
+                <button class="cbtn" data-action="valve" data-minutes="120">2 tim</button>
+              </div>
+            </section>
+            <section>
+              <h4>Värmepump · Tado</h4>
+              <div class="cstat" id="c-tado-status">–</div>
+              <div class="crow" id="c-tado-modes">
+                <button class="cbtn" data-action="tado-mode" data-mode="off">Av</button>
+                <button class="cbtn" data-action="tado-mode" data-mode="auto">Auto</button>
+                <button class="cbtn" data-action="tado-mode" data-mode="cool">Kyla</button>
+                <button class="cbtn" data-action="tado-mode" data-mode="heat">Värme</button>
+              </div>
+              <div class="crow">
+                <button class="cbtn" data-action="tado-down" aria-label="Sänk">−</button>
+                <span class="ctemp" id="c-tado-target">–</span>
+                <button class="cbtn" data-action="tado-up" aria-label="Höj">+</button>
+              </div>
+            </section>
+            <section>
+              <h4>Shelly 1</h4>
+              <div class="crow"><button class="cbtn" id="c-shelly1" data-action="toggle-shelly1">–</button></div>
+            </section>
+          </div>
+        </div>
+
         <div class="navbar">
           <div class="nav-item active">🏠 Översikt</div>
           <div class="nav-item">⚡ Energi</div>
@@ -227,20 +303,120 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="nav-item">🔋 Batteri</div>
           <div class="nav-item">⚡ Tibber</div>
           <div class="nav-item">📊 Historik</div>
+          <div class="nav-item ctl" data-action="toggle-controls">🎛️ Styrning</div>
         </div>
       </div>
     `;
 
-    this.shadowRoot.getElementById("tag-hose").addEventListener("click", () => {
-      const id = this._e("water_valve");
-      if (!id || !this._hass) return;
-      const st = this._hass.states[id];
-      const service = st && st.state === "open" ? "close_cover" : "open_cover";
-      this._hass.callService("cover", service, { entity_id: id });
+    this.shadowRoot.addEventListener("click", (ev) => {
+      const t = ev.target.closest("[data-action]");
+      if (!t) { return; }
+      const a = t.dataset.action;
+      if (a === "toggle-controls") this._toggleControls();
+      else if (a === "zaptec-on") this._zaptec(true);
+      else if (a === "zaptec-off") this._zaptec(false);
+      else if (a === "toggle-shelly1") this._svc("switch", "toggle", "shelly1");
+      else if (a === "toggle-shelly2") this._svc("switch", "toggle", "shelly2");
+      else if (a === "mode-zaptec") this._select("zaptec_mode", t.dataset.mode);
+      else if (a === "mode-1fas") this._select("ev_1fas_mode", t.dataset.mode);
+      else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
+      else if (a === "toggle-hose") this._setValve(this._valveOffAt ? 0 : 30);
+      else if (a === "tado-mode") this._tadoMode(t.dataset.mode);
+      else if (a === "tado-up") this._tadoStep(1);
+      else if (a === "tado-down") this._tadoStep(-1);
     });
 
     this._tickClock();
     setInterval(() => this._tickClock(), 30000);
+    setInterval(() => { const c = this.shadowRoot.getElementById("controls"); if (c && c.style.display !== "none") this._updateControls(); }, 1000);
+  }
+
+
+  // ---------- controls ----------
+  _toggleControls() {
+    const el = this.shadowRoot.getElementById("controls");
+    if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+  }
+  _svc(domain, service, key, extra) {
+    const id = this._e(key);
+    if (!id || !this._hass) return;
+    this._hass.callService(domain, service, Object.assign({ entity_id: id }, extra || {}));
+  }
+  _select(key, option) {
+    this._svc("input_select", "select_option", key, { option });
+  }
+  _zaptec(on) {
+    const sw = this._st("zaptec_charge_switch");
+    if (sw && sw.state !== "unavailable") this._svc("switch", on ? "turn_on" : "turn_off", "zaptec_charge_switch");
+    else this._svc("button", "press", on ? "zaptec_btn_resume" : "zaptec_btn_stop");
+  }
+  _tadoMode(mode) { this._svc("climate", "set_hvac_mode", "tado_climate", { hvac_mode: mode }); }
+  _tadoStep(delta) {
+    const st = this._st("tado_climate");
+    if (!st) return;
+    const cur = parseFloat(st.attributes.temperature);
+    if (isNaN(cur)) return;
+    const next = Math.round(cur + delta);
+    this._set("c-tado-target", next.toFixed(0) + " °C");
+    this._svc("climate", "set_temperature", "tado_climate", { temperature: next });
+  }
+  _setValve(minutes) {
+    if (this._valveTimeout) { clearTimeout(this._valveTimeout); this._valveTimeout = null; }
+    if (minutes === 0) {
+      this._valveOffAt = null;
+      this._svc("cover", "close_cover", "water_valve");
+    } else {
+      this._valveOffAt = Date.now() + minutes * 60000;
+      this._svc("cover", "open_cover", "water_valve");
+      this._valveTimeout = setTimeout(() => this._setValve(0), minutes * 60000);
+    }
+    this._updateControls();
+  }
+  _markActive(containerId, attr, value) {
+    const c = this.shadowRoot.getElementById(containerId);
+    if (!c) return;
+    c.querySelectorAll(".cbtn").forEach(b => b.classList.toggle("active", b.dataset[attr] === value));
+  }
+  _updateControls() {
+    const ZSTAT = { connected_charging: "Laddar", connected_finished: "Laddning klar", connected_requesting: "Väntar på start", disconnected: "Ej ansluten" };
+    const zs = this._st("zaptec_status");
+    const zp = this._num("zaptec_power", 0);
+    this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW")) : "–");
+    const zm = this._st("zaptec_mode");
+    this._markActive("c-zaptec-modes", "mode", zm ? zm.state : "");
+    if (!zm) this._set("c-zaptec-status", (zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW")) : "–") + " · läge saknas");
+
+    const ok1 = this._st("ev_1fas_status");
+    const s2 = this._st("shelly2");
+    const s2p = this._num("shelly2_power");
+    this._set("c-1fas-status", (ok1 ? (ok1.state === "on" ? "Laddning tillåten" : "Pausad") : "–") + (s2p !== null ? " · " + Math.round(s2p) + " W" : ""));
+    this._set("c-shelly2", s2 ? (s2.state === "on" ? "Plugg: PÅ (tryck för AV)" : s2.state === "off" ? "Plugg: AV (tryck för PÅ)" : "Plugg: ej tillgänglig") : "–");
+    const m1 = this._st("ev_1fas_mode");
+    this._markActive("c-1fas-modes", "mode", m1 ? m1.state : "");
+
+    const s1 = this._st("shelly1");
+    this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
+
+    const v = this._st("water_valve");
+    const open = v && (v.state === "open" || v.state === "opening");
+    let vt = v ? (open ? "På" : "Av") : "–";
+    if (open && this._valveOffAt) {
+      const rem = Math.max(0, this._valveOffAt - Date.now());
+      vt += " · stänger om " + Math.floor(rem / 60000) + " min " + String(Math.floor((rem % 60000) / 1000)).padStart(2, "0") + " s";
+    } else if (open) {
+      vt += " · ingen timer (stäng manuellt)";
+    }
+    this._set("c-valve-status", vt);
+    this._markActive("c-valve-btns", "minutes", open ? (this._valveOffAt ? String(Math.round((this._valveOffAt - Date.now()) / 60000 / 30) * 30) : "") : "0");
+
+    const t = this._st("tado_climate");
+    if (t) {
+      const cur = parseFloat(t.attributes.current_temperature);
+      this._set("c-tado-status", t.state + (isNaN(cur) ? "" : " · nu " + cur.toFixed(1) + " °C"));
+      const tgt = parseFloat(t.attributes.temperature);
+      this._set("c-tado-target", isNaN(tgt) ? "–" : tgt.toFixed(0) + " °C");
+      this._markActive("c-tado-modes", "mode", t.state);
+    } else this._set("c-tado-status", "–");
   }
 
   _tickClock() {
@@ -334,6 +510,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-house", this._fmt(house, 2, " kW"));
     this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._fmt(battPower, 2, " kW"));
     this._set("tag-v-grid", this._fmt(grid, 2, " kW"));
+    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
 
     const pct = clamp(battSoc, 0, 100);
     const el = this.shadowRoot.getElementById("battRing");
@@ -342,6 +519,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("v-vbatt", this._fmt(battV, 1, " V"));
     this._set("v-ibatt", this._fmt(battI, 1, " A"));
     this._set("v-tbatt", this._fmt(battT, 1, " °C"));
+    const rowT = this.shadowRoot.getElementById("row-tbatt");
+    if (rowT) rowT.style.display = battT === null ? "none" : "";
 
     const price = this._num("tibber_price");
     this._set("v-price", price === null ? "–" : price.toFixed(2) + " kr/kWh");
@@ -363,8 +542,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
     const ghTemp = this._num("greenhouse_temp");
     const ghHum = this._num("greenhouse_humidity");
+    const ghTag = this.shadowRoot.getElementById("tag-greenhouse");
+    if (ghTag) ghTag.style.display = ghTemp === null ? "none" : "";
     this._set("tag-v-greenhouse",
       ghTemp === null ? "–" : ghTemp.toFixed(1) + " °C" + (ghHum !== null ? " · " + Math.round(ghHum) + "%" : ""));
+
+    this._updateControls();
 
     const valveState = this._st("water_valve");
     const hoseOn = valveState && valveState.state === "open";
@@ -379,7 +562,7 @@ const STYLE = `
   .photo-card {
     position: relative;
     width: 100%;
-    aspect-ratio: 1402 / 1122;
+    aspect-ratio: 1412 / 1114;
     background-size: cover;
     background-position: center;
     border-radius: 16px;
@@ -394,6 +577,8 @@ const STYLE = `
   }
   .h1 { font-size: 1.5vw; font-weight: 800; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
   .sub { font-size: 0.7vw; opacity: 0.85; letter-spacing: 1px; margin-top: 2px; }
+  .weather-now, .mini-stats, .clock-box { background: rgba(8,14,12,0.5); backdrop-filter: blur(3px); border-radius: 10px; padding: 0.5vw 0.9vw; }
+  .brand { text-shadow: 0 1px 6px rgba(0,0,0,0.85); }
   .weather-now { display: flex; align-items: center; gap: 0.6vw; font-size: 1.1vw; }
   .w-desc { font-size: 0.65vw; opacity: 0.85; align-self: center; }
   .mini-stats { display: flex; gap: 1.2vw; font-size: 0.75vw; }
@@ -415,18 +600,19 @@ const STYLE = `
   .panel-title { font-size: 0.6vw; opacity: 0.65; letter-spacing: 1px; margin-bottom: 6px; text-transform: uppercase; }
   .panel .row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
   .panel .row.small { font-size: 0.7vw; opacity: 0.9; }
-  .now { left: 2%; top: 11%; }
-  .price { left: 2%; top: 34%; text-align: center; }
+  .now, .price, .batt, .energyday { width: 15.5%; min-width: 0; box-sizing: border-box; }
+  .now { left: 2%; top: 10%; }
+  .price { left: 2%; top: 28%; text-align: center; }
   .price-big { font-size: 1.6vw; font-weight: 700; }
   .price-sub { font-size: 0.55vw; opacity: 0.7; margin-top: 2px; }
-  .batt { left: 2%; top: 44%; text-align: center; }
-  .gauge { width: 5.5vw; height: 5.5vw; margin: 4px auto; display: block; }
-  .energyday { left: 2%; top: 68%; }
+  .batt { left: 2%; top: 38%; text-align: center; }
+  .gauge { width: 4.6vw; height: 4.6vw; margin: 4px auto; display: block; }
+  .energyday { left: 2%; top: 80%; }
   .energy-cols { display: flex; gap: 16px; }
   .energy-cols .lbl { display: block; font-size: 0.6vw; opacity: 0.7; }
   .energy-cols b { font-size: 0.9vw; }
 
-  .forecast { left: 27%; bottom: 2%; width: 34%; }
+  .forecast { left: 19%; bottom: 9%; width: 32%; }
   .forecast-row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .fday { text-align: center; font-size: 0.65vw; flex: 1; }
   .fday-lbl { opacity: 0.75; }
@@ -435,11 +621,11 @@ const STYLE = `
   .fday-lo { opacity: 0.7; }
   .fday-rain { opacity: 0.55; font-size: 0.55vw; }
 
-  .wind { right: 20%; bottom: 2%; text-align: center; }
-  .compass { width: 4.5vw; height: 4.5vw; }
+  .wind { right: 21%; bottom: 9%; text-align: center; min-width: 0; }
+  .compass { width: 3.6vw; height: 3.6vw; }
   #windArrow { transition: transform 0.6s ease; transform-origin: 50px 50px; }
 
-  .sensors { right: 2%; bottom: 2%; }
+  .sensors { right: 2%; bottom: 9%; }
 
   .tag {
     position: absolute;
@@ -466,6 +652,31 @@ const STYLE = `
   .nav-item { flex: 1; text-align: center; font-size: 0.6vw; padding: 0.4vw; border-radius: 8px; opacity: 0.75; }
   .nav-item.active { background: rgba(61, 220, 132, 0.25); opacity: 1; font-weight: 700; }
 
+  .nav-item.ctl { cursor: pointer; background: rgba(240,168,60,0.18); opacity: 1; font-weight: 700; }
+  .tag[data-action] { cursor: pointer; }
+  .controls {
+    position: absolute; left: 20%; right: 20%; top: 8%; z-index: 5;
+    background: rgba(8, 14, 12, 0.93); backdrop-filter: blur(6px);
+    border-radius: 14px; padding: 1.2% 1.6%; font-size: 0.85vw;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6); max-height: 80%; overflow: auto;
+  }
+  .controls-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 1.1vw; margin-bottom: 0.8vw; }
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw 1.6vw; }
+  .controls section { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.8vw 1vw; }
+  .controls h4 { margin: 0 0 0.4vw; font-size: 0.8vw; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
+  .cstat { font-weight: 600; margin-bottom: 0.5vw; }
+  .clabel { font-size: 0.6vw; opacity: 0.6; margin: 0.4vw 0 0.2vw; text-transform: uppercase; letter-spacing: 1px; }
+  .crow { display: flex; flex-wrap: wrap; gap: 0.4vw; margin-bottom: 0.4vw; align-items: center; }
+  .cbtn {
+    font: inherit; color: #fff; cursor: pointer;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 8px; padding: 0.4vw 0.8vw; min-height: 2vw;
+  }
+  .cbtn:hover { background: rgba(255,255,255,0.2); }
+  .cbtn.active { background: rgba(61,220,132,0.3); border-color: #3ddc84; font-weight: 700; }
+  .cbtn.close { padding: 0.2vw 0.7vw; }
+  .ctemp { font-weight: 800; font-size: 1.2vw; min-width: 4vw; text-align: center; }
+  @media (max-width: 900px) { .controls { left: 3%; right: 3%; } .controls-grid { grid-template-columns: 1fr; } .controls, .cbtn, .controls h4 { font-size: 13px; } .controls-head { font-size: 16px; } .ctemp { font-size: 18px; } .cbtn { min-height: 36px; padding: 6px 12px; } }
   @media (max-width: 700px) {
     .panel, .tag { font-size: 11px; }
     .h1 { font-size: 16px; } .sub { font-size: 9px; }
