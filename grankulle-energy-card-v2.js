@@ -172,7 +172,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="panel-title">Elpris just nu</div>
           <div class="price-big" id="v-price">– kr/kWh</div>
           <div class="price-lvl" id="v-price-lvl">–</div>
-          <div class="price-sub">Tibber Pulse · Grankullevägen</div>
+          <div class="price-sub" id="v-price-sub">Tibber Pulse · Grankullevägen</div>
         </div>
 
         <div class="panel batt">
@@ -643,9 +643,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         if (price !== null && isFinite(avg) && avg > 0) {
           const r = price / avg;
           const L = r < 0.6 ? ["Mycket billigt", "#3ddc84"] : r < 0.9 ? ["Billigt", "#8fe36b"] : r < 1.15 ? ["Normalt", "#f0c13c"] : r < 1.4 ? ["Dyrt", "#f08a3c"] : ["Mycket dyrt", "#e2634f"];
-          lvlEl.textContent = L[0] + " · " + Math.round(r * 100) + " % av snittet";
+          lvlEl.textContent = L[0];
+          this._set("v-price-sub", Math.round(r * 100) + " % av snittpriset · Tibber");
           lvlEl.style.color = L[1];
-        } else { lvlEl.textContent = "–"; lvlEl.style.color = ""; }
+        } else { lvlEl.textContent = "–"; lvlEl.style.color = ""; this._set("v-price-sub", "Tibber Pulse · Grankullevägen"); }
       }
     }
 
