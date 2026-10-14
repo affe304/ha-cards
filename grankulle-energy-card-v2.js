@@ -506,6 +506,19 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (ht) ht.classList.toggle("on", minutes !== 0);
     this._updateControls();
   }
+  // Grid "balance": measured over 24 h, a balanced house sits at ~+0.10 kW with ±0.09 kW noise
+  // (10-min mean 0.07-0.11 kW). Instant values flip sign ~10x per 10 min, so use a 3-min mean and a band of 0.10 ± 0.15 kW.
+  _gridWords(grid) {
+    const CENTER = 0.10, HALF = 0.15, WIN = 180000;
+    const now = Date.now();
+    const b = this._gbuf = this._gbuf || [];
+    if (!b.length || now - b[b.length - 1].t >= 3000) b.push({ t: now, v: grid });
+    while (b.length && now - b[0].t > WIN) b.shift();
+    const avg = b.length > 1 && now - b[0].t >= 15000 ? b.reduce((a, x) => a + x.v, 0) / b.length : grid;
+    if (Math.abs(avg - CENTER) <= HALF) return "Balans";
+    return this._flow(avg, "Köper", "Säljer", "Balans");
+  }
+
   _markActive(containerId, attr, value) {
     const c = this.shadowRoot.getElementById(containerId);
     if (!c) return;
@@ -683,12 +696,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("v-solar", this._fmt(solar, 2, " kW"));
     this._set("v-house", this._fmt(house, 2, " kW"));
     this._set("v-batt", Math.round(battSoc) + "% · " + this._flow(battPower, "Laddar", "Urladdar", "Vilar", true));
-    this._set("v-grid", this._flow(grid, "Köper", "Säljer", "Balans"));
+    const gridTxt = this._gridWords(grid);
+    this._set("v-grid", gridTxt);
 
     this._set("tag-v-solar", this._fmt(solar, 2, " kW"));
     this._set("tag-v-house", this._fmt(house, 2, " kW"));
     this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._flow(battPower, "Laddar", "Urladdar", "Vilar"));
-    this._set("tag-v-grid", this._flow(grid, "Köper", "Säljer", "Balans"));
+    this._set("tag-v-grid", gridTxt);
     const evSoc = this._num("ev_soc");
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
     const evTgt2 = this._num("ev_soc_target");
