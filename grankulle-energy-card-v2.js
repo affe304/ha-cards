@@ -61,6 +61,7 @@ const DEFAULT_ENTITIES = {
   ev_1fas_mode: "input_select.ev_1fas_mode",
   ev_1fas_status: "binary_sensor.ev_laddning_tillaten_1_fas",
   sun: "sun.sun",
+  cheap_share: "input_number.zaptec_billig_el_billigaste_andel_av_dygnet",
 };
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -225,6 +226,20 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-lbl">SLANG</div><div class="tag-val" id="tag-v-hose">–</div>
         </div>
 
+        <div class="panel pricechart">
+          <div class="pc-head">
+            <div class="panel-title" style="margin:0">Elpris framöver · billiga timmar</div>
+            <div class="pc-share"><span class="pc-lbl">Billigaste</span>
+              <button class="cbtn" data-action="cheap-share" data-delta="-5">−</button>
+              <b id="pc-share">35 %</b>
+              <button class="cbtn" data-action="cheap-share" data-delta="5">+</button>
+            </div>
+          </div>
+          <div class="pc-now" id="pc-now">–</div>
+          <div class="pc-next" id="pc-next">Hämtar priser…</div>
+          <div class="pc-bars" id="pc-bars"></div>
+        </div>
+
         <div class="panel forecast">
           <div class="panel-title">Väder framöver</div>
           <div class="forecast-row" id="forecastRow">
@@ -324,16 +339,113 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
+      else if (a === "cheap-share") this._cheapShareDelta(parseInt(t.dataset.delta, 10));
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
     this._tickClock();
     setInterval(() => this._tickClock(), 30000);
+    this._fetchPrices();
+    setInterval(() => this._fetchPrices(), 15 * 60000);
+    setInterval(() => this._renderPrices(), 30000);
     if (window.innerWidth < 900) this._toggleControls();
     this._updateControls();
     setInterval(() => this._updateControls(), 1000);
   }
 
+
+  // ---------- price plan (Tibber) ----------
+  _cheapShareDelta(d) {
+    const s = this._st("cheap_share");
+    const cur = s ? parseFloat(s.state) : 35;
+    const v = clamp((isFinite(cur) ? cur : 35) + d, 5, 100);
+    this._svc("input_number", "set_value", "cheap_share", { value: v });
+    this._cheapOverride = v;
+    setTimeout(() => { this._cheapOverride = null; }, 4000);
+    this._renderPrices();
+  }
+  async _fetchPrices() {
+    if (!this._hass || !this._hass.callWS) return;
+    try {
+      const st = new Date(); st.setHours(0, 0, 0, 0);
+      const en = new Date(st.getTime() + 49 * 3600e3);
+      const f = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+      const r = await this._hass.callWS({
+        type: "call_service", domain: "tibber", service: "get_prices",
+        service_data: { start: f(st), end: f(en) }, return_response: true,
+      });
+      const home = r && r.response && r.response.prices ? Object.values(r.response.prices)[0] : null;
+      if (!home || !home.length) return;
+      const hours = {};
+      home.forEach((p) => {
+        const t = new Date(p.start_time).getTime();
+        const k = Math.floor(t / 3600e3);
+        (hours[k] = hours[k] || []).push(p.price);
+      });
+      this._hourly = Object.keys(hours).map(Number).sort((a, b) => a - b).map((k) => ({
+        t: k * 3600e3, price: hours[k].reduce((a, b) => a + b, 0) / hours[k].length,
+      }));
+      this._renderPrices();
+    } catch (e) { console.warn("grankulle: tibber get_prices failed", e); this._set("pc-next", "Kunde inte hämta prisdata"); }
+  }
+  _renderPrices() {
+    const bars = this.shadowRoot.getElementById("pc-bars");
+    if (!bars || !this._hourly || !this._hourly.length) return;
+    const H = this._hourly;
+    const sh = this._cheapOverride != null ? this._cheapOverride : this._num("cheap_share", 35);
+    this._set("pc-share", Math.round(sh) + " %");
+    // cheap = among the cheapest X % of each calendar day (same rule as the charging automation)
+    const dayKey = (t) => { const d = new Date(t); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
+    const byDay = {};
+    H.forEach((h) => { (byDay[dayKey(h.t)] = byDay[dayKey(h.t)] || []).push(h); });
+    Object.values(byDay).forEach((arr) => {
+      const sorted = arr.slice().sort((a, b) => a.price - b.price);
+      const n = sorted.length;
+      sorted.forEach((h, i) => { h.rank = n > 1 ? i / (n - 1) : 0; });
+      arr.forEach((h) => { h.cheap = h.rank * 100 <= sh + 1e-6; h.dear = h.rank >= 0.75; });
+    });
+    const now = Date.now();
+    const curK = Math.floor(now / 3600e3) * 3600e3;
+    const max = Math.max(...H.map((h) => h.price), 0.01);
+    const fmtH = (t) => String(new Date(t).getHours()).padStart(2, "0");
+    const dnames = ["sön", "mån", "tis", "ons", "tors", "fre", "lör"];
+    let bh = "", ax = "";
+    H.forEach((h) => {
+      const cls = ["pc-col", h.cheap ? "cheap" : "", h.dear ? "dear" : "", h.t < curK ? "past" : "", h.t === curK ? "cur" : ""].join(" ");
+      const hp = clamp(Math.max(h.price, 0) / max * 100, 6, 100);
+      bh += '<div class="' + cls + '" title="' + dnames[new Date(h.t).getDay()] + " " + fmtH(h.t) + ":00 · " + h.price.toFixed(2) + ' kr/kWh"><div class="pc-bar" style="height:' + hp + '%"></div></div>';
+      const hr = new Date(h.t).getHours();
+      ax += '<div class="pc-tick' + (hr === 0 ? " day" : "") + '">' + (hr === 0 ? dnames[new Date(h.t).getDay()] : (hr % 3 === 0 ? fmtH(h.t) : "")) + "</div>";
+    });
+    bars.innerHTML = bh;
+    let axis = this.shadowRoot.getElementById("pc-axis");
+    if (!axis) { axis = document.createElement("div"); axis.id = "pc-axis"; axis.className = "pc-axis"; bars.parentNode.appendChild(axis); }
+    axis.innerHTML = ax;
+    // status + upcoming cheap windows
+    const cur = H.find((h) => h.t === curK);
+    const nowEl = this.shadowRoot.getElementById("pc-now");
+    if (cur) {
+      nowEl.textContent = (cur.cheap ? "Billigt just nu" : cur.dear ? "Dyrt just nu" : "Normalpris just nu") + " · " + cur.price.toFixed(2) + " kr/kWh";
+      nowEl.style.color = cur.cheap ? "#3ddc84" : cur.dear ? "#f08c3c" : "#fff";
+    } else nowEl.textContent = "–";
+    const fut = H.filter((h) => h.t >= curK);
+    const wins = [];
+    fut.forEach((h) => {
+      const last = wins[wins.length - 1];
+      if (!h.cheap) return;
+      if (last && last.end === h.t) { last.end = h.t + 3600e3; last.sum += h.price; last.n++; }
+      else wins.push({ start: h.t, end: h.t + 3600e3, sum: h.price, n: 1 });
+    });
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const lbl = (t) => {
+      const d = new Date(t); const dd = Math.round((new Date(d).setHours(0, 0, 0, 0) - today0.getTime()) / 86400e3);
+      return (dd === 0 ? "" : dd === 1 ? "imorgon " : dnames[d.getDay()] + " ") + fmtH(t);
+    };
+    let txt;
+    if (!wins.length) txt = "Inga billiga timmar kvar i prisdata än (morgondagens priser kommer ca 13:00).";
+    else txt = "Billiga timmar: " + wins.slice(0, 3).map((w) => lbl(w.start) + "–" + fmtH(w.end) + " (" + (w.sum / w.n).toFixed(2) + " kr)").join(" · ");
+    this._set("pc-next", txt);
+  }
 
   // ---------- controls ----------
   _toggleControls() {
@@ -722,6 +834,25 @@ const STYLE = `
   .energy-cols .lbl { display: block; font-size: 0.6vw; opacity: 0.7; }
   .energy-cols b { font-size: 0.9vw; }
 
+
+  .pricechart { left: 19%; bottom: 15.5%; width: 43%; box-sizing: border-box; padding: 0.7% 1%; }
+  .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2vw; }
+  .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
+  .pc-share .cbtn { min-height: 0; padding: 0 0.45vw; font-size: 0.7vw; }
+  .pc-lbl { opacity: 0.65; }
+  .pc-now { font-size: 0.8vw; font-weight: 800; }
+  .pc-next { font-size: 0.62vw; opacity: 0.9; margin-bottom: 0.3vw; }
+  .pc-bars { display: flex; gap: 1px; align-items: flex-end; height: 3.6vw; }
+  .pc-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; position: relative; }
+  .pc-bar { width: 100%; border-radius: 2px 2px 0 0; background: rgba(160,175,190,0.55); }
+  .pc-col.cheap .pc-bar { background: #3ddc84; }
+  .pc-col.dear .pc-bar { background: rgba(240,140,60,0.8); }
+  .pc-col.past .pc-bar { opacity: 0.32; }
+  .pc-col.cur .pc-bar { outline: 1.5px solid #fff; outline-offset: 0; }
+  .pc-col.cur::after { content: "▼"; position: absolute; top: -0.2vw; left: 0; right: 0; text-align: center; font-size: 0.45vw; color: #fff; line-height: 1; }
+  .pc-axis { display: flex; gap: 1px; margin-top: 2px; }
+  .pc-tick { flex: 1; min-width: 0; font-size: 0.45vw; opacity: 0.6; text-align: left; white-space: nowrap; overflow: visible; }
+  .pc-tick.day { opacity: 1; font-weight: 700; border-left: 1px solid rgba(255,255,255,0.5); padding-left: 2px; }
   .forecast { left: 19%; bottom: 2.5%; width: 32%; }
   .forecast-row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .fday { text-align: center; font-size: 0.65vw; flex: 1; }
