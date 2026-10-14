@@ -61,7 +61,6 @@ const DEFAULT_ENTITIES = {
   ev_1fas_mode: "input_select.ev_1fas_mode",
   ev_1fas_status: "binary_sensor.ev_laddning_tillaten_1_fas",
   sun: "sun.sun",
-  cheap_share: "input_number.zaptec_billig_el_billigaste_andel_av_dygnet",
 };
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -228,23 +227,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
         <div class="panel pricechart">
           <div class="pc-head">
-            <div class="panel-title" style="margin:0">Elpris framöver · billiga timmar</div>
-            <div class="pc-share"><span class="pc-lbl">Billigaste</span>
-              <button class="cbtn" data-action="cheap-share" data-delta="-5">−</button>
-              <b id="pc-share">35 %</b>
-              <button class="cbtn" data-action="cheap-share" data-delta="5">+</button>
-            </div>
+            <div class="panel-title" style="margin:0">Elpris framöver · billigt enligt Tibber</div>
           </div>
           <div class="pc-now" id="pc-now">–</div>
           <div class="pc-next" id="pc-next">Hämtar priser…</div>
           <div class="pc-bars" id="pc-bars"></div>
-        </div>
-
-        <div class="panel forecast">
-          <div class="panel-title">Väder framöver</div>
-          <div class="forecast-row" id="forecastRow">
-            <div class="fday">–</div><div class="fday">–</div><div class="fday">–</div><div class="fday">–</div><div class="fday">–</div>
-          </div>
         </div>
 
         <div class="panel wind">
@@ -339,7 +326,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
-      else if (a === "cheap-share") this._cheapShareDelta(parseInt(t.dataset.delta, 10));
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
@@ -355,15 +341,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
 
   // ---------- price plan (Tibber) ----------
-  _cheapShareDelta(d) {
-    const s = this._st("cheap_share");
-    const cur = s ? parseFloat(s.state) : 35;
-    const v = clamp((isFinite(cur) ? cur : 35) + d, 5, 100);
-    this._svc("input_number", "set_value", "cheap_share", { value: v });
-    this._cheapOverride = v;
-    setTimeout(() => { this._cheapOverride = null; }, 4000);
-    this._renderPrices();
-  }
   async _fetchPrices() {
     if (!this._hass || !this._hass.callWS) return;
     try {
@@ -392,18 +369,26 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const bars = this.shadowRoot.getElementById("pc-bars");
     if (!bars || !this._hourly || !this._hourly.length) return;
     const H = this._hourly;
-    const sh = this._cheapOverride != null ? this._cheapOverride : this._num("cheap_share", 35);
-    this._set("pc-share", Math.round(sh) + " %");
-    // cheap = among the cheapest X % of each calendar day (same rule as the charging automation)
+    // Tibber price level: price relative to the average (<60 % very cheap, <90 cheap, <115 normal, <140 expensive, else very expensive).
+    // Today uses the Tibber sensor's day average; other days their own average.
     const dayKey = (t) => { const d = new Date(t); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
+    const todayKey = dayKey(Date.now());
+    const pst = this._st("tibber_price");
+    const sAvg = pst ? parseFloat(pst.attributes && pst.attributes.avg_price) : NaN;
     const byDay = {};
     H.forEach((h) => { (byDay[dayKey(h.t)] = byDay[dayKey(h.t)] || []).push(h); });
-    Object.values(byDay).forEach((arr) => {
-      const sorted = arr.slice().sort((a, b) => a.price - b.price);
-      const n = sorted.length;
-      sorted.forEach((h, i) => { h.rank = n > 1 ? i / (n - 1) : 0; });
-      arr.forEach((h) => { h.cheap = h.rank * 100 <= sh + 1e-6; h.dear = h.rank >= 0.75; });
+    Object.keys(byDay).forEach((k) => {
+      const arr = byDay[k];
+      let avg = arr.reduce((a, h) => a + h.price, 0) / arr.length;
+      if (Number(k) === todayKey && isFinite(sAvg) && sAvg > 0) avg = sAvg;
+      arr.forEach((h) => {
+        h.ratio = avg > 0 ? h.price / avg : 1;
+        h.lvl = h.ratio < 0.6 ? 0 : h.ratio < 0.9 ? 1 : h.ratio < 1.15 ? 2 : h.ratio < 1.4 ? 3 : 4;
+        h.cheap = h.lvl <= 1; h.dear = h.lvl >= 3;
+      });
     });
+    const LVL = ["Mycket billigt", "Billigt", "Normalt", "Dyrt", "Mycket dyrt"];
+    const LCOL = ["#1fcf6e", "#3ddc84", "#ffffff", "#f08c3c", "#ff5a4e"];
     const now = Date.now();
     const curK = Math.floor(now / 3600e3) * 3600e3;
     const max = Math.max(...H.map((h) => h.price), 0.01);
@@ -411,7 +396,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const dnames = ["sön", "mån", "tis", "ons", "tors", "fre", "lör"];
     let bh = "", ax = "";
     H.forEach((h) => {
-      const cls = ["pc-col", h.cheap ? "cheap" : "", h.dear ? "dear" : "", h.t < curK ? "past" : "", h.t === curK ? "cur" : ""].join(" ");
+      const cls = ["pc-col", "lvl" + h.lvl, h.t < curK ? "past" : "", h.t === curK ? "cur" : ""].join(" ");
       const hp = clamp(Math.max(h.price, 0) / max * 100, 6, 100);
       bh += '<div class="' + cls + '" title="' + dnames[new Date(h.t).getDay()] + " " + fmtH(h.t) + ":00 · " + h.price.toFixed(2) + ' kr/kWh"><div class="pc-bar" style="height:' + hp + '%"></div></div>';
       const hr = new Date(h.t).getHours();
@@ -425,8 +410,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const cur = H.find((h) => h.t === curK);
     const nowEl = this.shadowRoot.getElementById("pc-now");
     if (cur) {
-      nowEl.textContent = (cur.cheap ? "Billigt just nu" : cur.dear ? "Dyrt just nu" : "Normalpris just nu") + " · " + cur.price.toFixed(2) + " kr/kWh";
-      nowEl.style.color = cur.cheap ? "#3ddc84" : cur.dear ? "#f08c3c" : "#fff";
+      nowEl.textContent = LVL[cur.lvl] + " just nu · " + cur.price.toFixed(2) + " kr/kWh · " + Math.round(cur.ratio * 100) + " % av snittet";
+      nowEl.style.color = LCOL[cur.lvl];
     } else nowEl.textContent = "–";
     const fut = H.filter((h) => h.t >= curK);
     const wins = [];
@@ -597,6 +582,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!this._forecast || !this._forecast.daily) return;
     const d = this._forecast.daily;
     const row = this.shadowRoot.getElementById("forecastRow");
+    if (!row) return;
     if (!row) return;
     const days = ["Sön","Mån","Tis","Ons","Tor","Fre","Lör"];
     row.innerHTML = d.time.map((t, i) => {
@@ -835,7 +821,7 @@ const STYLE = `
   .energy-cols b { font-size: 0.9vw; }
 
 
-  .pricechart { left: 19%; bottom: 15.5%; width: 43%; box-sizing: border-box; padding: 0.7% 1%; }
+  .pricechart { left: 19%; bottom: 2.5%; width: 46%; box-sizing: border-box; padding: 0.7% 1%; }
   .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2vw; }
   .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
   .pc-share .cbtn { min-height: 0; padding: 0 0.45vw; font-size: 0.7vw; }
@@ -845,8 +831,10 @@ const STYLE = `
   .pc-bars { display: flex; gap: 1px; align-items: flex-end; height: 3.6vw; }
   .pc-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; position: relative; }
   .pc-bar { width: 100%; border-radius: 2px 2px 0 0; background: rgba(160,175,190,0.55); }
-  .pc-col.cheap .pc-bar { background: #3ddc84; }
-  .pc-col.dear .pc-bar { background: rgba(240,140,60,0.8); }
+  .pc-col.lvl0 .pc-bar { background: #1fcf6e; }
+  .pc-col.lvl1 .pc-bar { background: #7be3a6; }
+  .pc-col.lvl3 .pc-bar { background: rgba(240,140,60,0.85); }
+  .pc-col.lvl4 .pc-bar { background: #ff5a4e; }
   .pc-col.past .pc-bar { opacity: 0.32; }
   .pc-col.cur .pc-bar { outline: 1.5px solid #fff; outline-offset: 0; }
   .pc-col.cur::after { content: "▼"; position: absolute; top: -0.2vw; left: 0; right: 0; text-align: center; font-size: 0.45vw; color: #fff; line-height: 1; }
