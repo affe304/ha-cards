@@ -217,7 +217,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
         <div class="carlamp" id="lamp-v60" style="left:28%; top:61.2%;"></div>
         <div class="carlamp" id="lamp-leaf" style="left:58.1%; top:54.6%;"></div>
-        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
+        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:53.5%; top:48.5%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
           <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
@@ -828,11 +828,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const sessKwh = this._num("zaptec_session");
     const zst = this._st("zaptec_status") ? this._st("zaptec_status").state : "";
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
-    this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.name.toUpperCase() + " LADDAR" : "LADDBOX");
+    this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short + " LADDAR" : "LADDBOX");
     const sessTxt = sessKwh !== null ? sessKwh.toFixed(1) + " kWh" : "–";
     if (carNow) {
-      this._set("tag-s1-ev", "Laddat denna session: " + sessTxt);
-      this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A totalt");
+      this._set("tag-s1-ev", sessTxt + " denna session");
+      this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A");
     } else if (zst === "connected_finished") {
       this._set("tag-s1-ev", "Laddning klar · " + sessTxt + " laddat");
       this._set("tag-s2-ev", "Bil ansluten");
