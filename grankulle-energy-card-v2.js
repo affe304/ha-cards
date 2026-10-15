@@ -29,6 +29,7 @@ const DEFAULT_ENTITIES = {
 
   fronius_power: "sensor.fronius_symo_12_5_3_m_id_20_total_effekt",
   zaptec_power: "sensor.zaptec_laddeffekt",
+  zaptec_session: "sensor.zaptec_laddat_denna_sessionen",
   zaptec_i1: "sensor.zaptec_strom_fas_1",
   zaptec_i2: "sensor.zaptec_strom_fas_2",
   zaptec_i3: "sensor.zaptec_strom_fas_3",
@@ -645,7 +646,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const zp = this._num("zaptec_power", 0);
     const car = this._whichCar();
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
-    const carTxt = car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "";
+    const sessK = this._num("zaptec_session");
+    const connected = zs && zs.state !== "disconnected";
+    const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" : "");
     const evTxt = carTxt + (evSoc2 !== null && (!car || car.name === "V60") ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "");
     this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
@@ -820,8 +823,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-batt", Math.round(battSoc) + "% · " + this._flow(battPower, "Laddar", "Urladdar", "Vilar"));
     this._set("tag-v-grid", this._gridWords(grid, true));
     const evSoc = this._num("ev_soc");
-    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
     const carNow = this._whichCar();
+    const sessKwh = this._num("zaptec_session");
+    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW") + (carNow && sessKwh !== null ? " · " + sessKwh.toFixed(1) + " kWh" : ""));
     this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short : "LADDBOX");
     // pulsing blue light in the windshield of the car that is charging
     const v60Ch = this._st("ev_charging");
