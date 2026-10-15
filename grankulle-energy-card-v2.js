@@ -195,6 +195,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="panel-title" style="margin:6px 0 2px">Energi i batteriet</div>
           <div class="row"><span id="v-bc-kwh">–</span><b id="v-bc-cost">–</b></div>
           <div class="row small"><span>Lagrat värde</span><b id="v-bc-val">–</b></div>
+          <div class="row small"><span id="v-bc-est">–</span></div>
         </div>
 
         <!-- overlay tags positioned over the photo, matching the reference layout -->
@@ -401,15 +402,20 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       let c = wc ? wsum / wc : 1.2;
       const soc0 = mean("soc", times[0]);
       let S = Math.max(0.2, (soc0 != null ? soc0 : 50) / 100 * cap);
-      let lastP = c;
-      times.forEach((t) => {
-        let p = mean("price", t); if (p == null) p = lastP; else lastP = p;
-        const ec = chg("dcc", t), ed = chg("dcd", t), g = chg("gin", t), pv = chg("pv", t);
-        const gs = g + pv > 0 ? g / (g + pv) : (ec > 0 ? 1 : 0);
-        if (ec > 0) { c = (S * c + ec * gs * p) / (S + ec); S += ec; }
-        if (ed > 0) S = Math.max(0.2, S - ed);
-      });
-      this._battCost = { c, cap };
+      const c0 = c, S0 = S;
+      const run = (allGrid) => {
+        let cc = c0, SS = S0, lastP = c0;
+        times.forEach((t) => {
+          let p = mean("price", t); if (p == null) p = lastP; else lastP = p;
+          const ec = chg("dcc", t), ed = chg("dcd", t), g = chg("gin", t), pv = chg("pv", t);
+          const gs = allGrid ? 1 : (g + pv > 0 ? g / (g + pv) : (ec > 0 ? 1 : 0));
+          if (ec > 0) { cc = (SS * cc + ec * gs * p) / (SS + ec); SS += ec; }
+          if (ed > 0) SS = Math.max(0.2, SS - ed);
+        });
+        return cc;
+      };
+      // c = estimate (split by Multiplus counters), cMax = upper bound (everything grid-charged); lower bound is 0 (everything solar)
+      this._battCost = { c: run(false), cMax: run(true), cap };
     } catch (e) { console.warn("grankulle: battery cost failed", e); }
     this._renderDay();
   }
@@ -427,8 +433,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (bc && soc != null) {
       const kwh = soc / 100 * bc.cap;
       this._set("v-bc-kwh", kwh.toFixed(1) + " kWh");
-      this._set("v-bc-cost", "≈ " + bc.c.toFixed(2) + " kr/kWh");
-      this._set("v-bc-val", "≈ " + (kwh * bc.c).toFixed(1) + " kr");
+      this._set("v-bc-cost", "0–" + bc.cMax.toFixed(2) + " kr/kWh");
+      this._set("v-bc-val", "0–" + (kwh * bc.cMax).toFixed(1) + " kr");
+      this._set("v-bc-est", "Beräknad (ej mätt): ≈ " + bc.c.toFixed(2) + " kr/kWh");
     }
   }
 
