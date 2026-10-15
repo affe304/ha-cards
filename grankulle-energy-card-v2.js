@@ -30,6 +30,7 @@ const DEFAULT_ENTITIES = {
   fronius_power: "sensor.fronius_symo_12_5_3_m_id_20_total_effekt",
   zaptec_power: "sensor.zaptec_laddeffekt",
   zaptec_session: "sensor.zaptec_laddat_denna_sessionen",
+  zaptec_energy_total: "sensor.zaptec_forbrukad_energi",
   zaptec_i1: "sensor.zaptec_strom_fas_1",
   zaptec_i2: "sensor.zaptec_strom_fas_2",
   zaptec_i3: "sensor.zaptec_strom_fas_3",
@@ -219,7 +220,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="carlamp" id="lamp-leaf" style="left:58.1%; top:54.6%;"></div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:53.5%; top:48.5%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
-          <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s2-ev"></div>
+          <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s3-ev" title="Energin i sessionen × Tibbers timpris (som om allt kom från nätet; sol och batteri är inte avdragna)"></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
         <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
           <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
@@ -363,6 +364,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     setInterval(() => this._fetchPrices(), 15 * 60000);
     this._fetchDay();
     setInterval(() => this._fetchDay(), 10 * 60000);
+    setTimeout(() => this._fetchSession(), 3000);
+    setInterval(() => this._fetchSession(), 2 * 60000);
     setInterval(() => this._renderPrices(), 30000);
     if (window.innerWidth < 900) this._toggleControls();
     this._updateControls();
@@ -425,6 +428,35 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       this._battCost = { c: run(false), cMax: run(true), cap };
     } catch (e) { console.warn("grankulle: battery cost failed", e); }
     this._renderDay();
+  }
+  // Cost of the current Zaptec session at the Tibber price (as if all energy came from the grid; solar/battery are not netted out).
+  _sessCostTxt() {
+    const c = this._sessCost;
+    if (!c || !isFinite(c.cost)) return "";
+    return "≈ " + c.cost.toFixed(c.cost < 10 ? 1 : 0) + " kr" + (c.avg != null ? " (" + c.avg.toFixed(2) + " kr/kWh)" : "");
+  }
+  async _fetchSession() {
+    if (!this._hass || !this._hass.callWS) return;
+    try {
+      const S = this._num("zaptec_session"), eid = this._e("zaptec_energy_total"), pid = this._e("tibber_price");
+      const zs = this._st("zaptec_status");
+      if (S === null || !eid || !pid || !zs || zs.state === "disconnected") { this._sessCost = null; return; }
+      const r = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(Date.now() - 36 * 3600e3).toISOString(), end_time: new Date().toISOString(), statistic_ids: [eid, pid], period: "5minute", types: ["change", "state", "mean"] });
+      const en = (r[eid] || []).filter((x) => x.change != null), pr = {};
+      (r[pid] || []).forEach((x) => { if (x.mean != null) pr[x.start] = x.mean; });
+      if (!en.length) return;
+      const curE = this._num("zaptec_energy_total"), curP = this._num("tibber_price");
+      let lastP = curP != null ? curP : 1;
+      let cost = 0, left = S;
+      const tail = curE !== null && en[en.length - 1].state != null ? Math.max(0, curE - en[en.length - 1].state) : 0;
+      const t0 = Math.min(tail, left); cost += t0 * lastP; left -= t0;
+      for (let i = en.length - 1; i >= 0 && left > 0.001; i--) {
+        const p = pr[en[i].start] != null ? pr[en[i].start] : lastP; lastP = p;
+        const e = Math.min(Math.max(0, en[i].change), left); cost += e * p; left -= e;
+      }
+      this._sessCost = { cost, avg: S > 0.05 ? cost / S : null, partial: left > 0.3 };
+    } catch (e) { console.warn("grankulle: session cost failed", e); }
+    this._updateControls();
   }
   _renderDay() {
     const f1 = (v, u) => (v == null || !isFinite(v) ? "–" : v.toFixed(1) + " " + u);
@@ -649,7 +681,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
     const sessK = this._num("zaptec_session");
     const connected = zs && zs.state !== "disconnected";
-    const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" : "");
+    const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" + (this._sessCostTxt() ? " · " + this._sessCostTxt() + " till nätpris" : "") : "");
     const evTxt = carTxt + (evSoc2 !== null && (!car || car.name === "V60") ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "");
     this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
@@ -830,6 +862,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
     this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short + " LADDAR" : "LADDBOX");
     const sessTxt = sessKwh !== null ? sessKwh.toFixed(1) + " kWh" : "–";
+    const costTxt = this._sessCostTxt();
+    this._set("tag-s3-ev", costTxt && zst !== "disconnected" ? "Kostnad " + costTxt : "");
     if (carNow) {
       this._set("tag-s1-ev", sessTxt + " denna session");
       this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A");
