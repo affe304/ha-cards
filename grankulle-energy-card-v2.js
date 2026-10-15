@@ -214,6 +214,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
+        <div class="carlamp" id="lamp-v60" style="left:28.3%; top:60.7%;"></div>
+        <div class="carlamp" id="lamp-leaf" style="left:58.3%; top:54.1%;"></div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
         </div>
@@ -821,6 +823,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
     const carNow = this._whichCar();
     this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short : "LADDBOX");
+    // pulsing blue light in the windshield of the car that is charging
+    const v60Ch = this._st("ev_charging");
+    const lampV = this.shadowRoot.getElementById("lamp-v60"), lampL = this.shadowRoot.getElementById("lamp-leaf");
+    if (lampV) lampV.classList.toggle("on", carNow ? carNow.short === "V60" : !!(v60Ch && v60Ch.state === "on"));
+    if (lampL) lampL.classList.toggle("on", !!(carNow && carNow.short === "LEAF"));
     const evTgt2 = this._num("ev_soc_target");
     const v60 = this.shadowRoot.getElementById("tag-v60");
     if (v60) v60.style.display = evSoc === null ? "none" : "";
@@ -1016,6 +1023,18 @@ const STYLE = `
   .nav-item.ctl { cursor: pointer; background: rgba(240,168,60,0.18); opacity: 1; font-weight: 700; }
   .tag[data-action] { cursor: pointer; }
   .tag { z-index: 6; }
+  .carlamp {
+    position: absolute; width: 0.6vw; height: 0.6vw; min-width: 6px; min-height: 6px; border-radius: 50%;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 4; display: none;
+    background: radial-gradient(circle, #e3f4ff 0%, #4fb3ff 45%, rgba(33,150,243,0) 72%);
+    box-shadow: 0 0 0.5vw 0.15vw rgba(66,165,245,0.85);
+    animation: lamppulse 1.6s ease-in-out infinite;
+  }
+  .carlamp.on { display: block; }
+  @keyframes lamppulse {
+    0%, 100% { opacity: 0.35; transform: translate(-50%, -50%) scale(0.8); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+  }
   .controls {
     position: absolute; right: 1%; top: 7.5%; width: 27%; max-height: 62%; z-index: 5;
     background: rgba(8, 14, 12, 0.42); backdrop-filter: blur(3px);
