@@ -222,6 +222,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="pc-now" id="pc-now">–</div>
           <div class="pc-next" id="pc-next">Hämtar priser…</div>
           <div class="pc-bars" id="pc-bars"></div>
+          <div class="pc-tip" id="pc-tip"></div>
         </div>
 
         <div class="panel wind">
@@ -319,6 +320,24 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
+    const pcBars = this.shadowRoot.getElementById("pc-bars");
+    const pcTip = this.shadowRoot.getElementById("pc-tip");
+    const showTip = (ev) => {
+      const col = ev.target.closest && ev.target.closest(".pc-col");
+      if (!col || !col.dataset.tip) { pcTip.style.display = "none"; return; }
+      const pr = pcBars.closest(".pricechart").getBoundingClientRect();
+      const cr = col.getBoundingClientRect();
+      pcTip.textContent = col.dataset.tip;
+      pcTip.style.display = "block";
+      const half = pcTip.offsetWidth / 2;
+      const x = clamp(cr.left + cr.width / 2 - pr.left, half + 2, pr.width - half - 2);
+      pcTip.style.left = x + "px";
+      pcTip.style.top = (cr.top - pr.top - 4) + "px";
+    };
+    pcBars.addEventListener("mouseover", showTip);
+    pcBars.addEventListener("mousemove", showTip);
+    pcBars.addEventListener("click", showTip);
+    pcBars.addEventListener("mouseleave", () => { pcTip.style.display = "none"; });
     this._tickClock();
     setInterval(() => this._tickClock(), 30000);
     this._fetchPrices();
@@ -388,7 +407,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     H.forEach((h) => {
       const cls = ["pc-col", "lvl" + h.lvl, h.t < curK ? "past" : "", h.t === curK ? "cur" : ""].join(" ");
       const hp = clamp(Math.max(h.price, 0) / max * 100, 6, 100);
-      bh += '<div class="' + cls + '" title="' + dnames[new Date(h.t).getDay()] + " " + fmtH(h.t) + ":00 · " + h.price.toFixed(2) + ' kr/kWh"><div class="pc-bar" style="height:' + hp + '%"></div></div>';
+      bh += '<div class="' + cls + '" data-tip="' + dnames[new Date(h.t).getDay()] + " " + fmtH(h.t) + ":00 · " + h.price.toFixed(2) + " kr/kWh · " + LVL[h.lvl] + " (" + Math.round(h.ratio * 100) + ' %)"><div class="pc-bar" style="height:' + hp + '%"></div></div>';
       const hr = new Date(h.t).getHours();
       ax += '<div class="pc-tick' + (hr === 0 ? " day" : "") + '">' + (hr === 0 ? dnames[new Date(h.t).getDay()] : (hr % 3 === 0 ? fmtH(h.t) : "")) + "</div>";
     });
@@ -832,9 +851,10 @@ const STYLE = `
   .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
   .pc-share .cbtn { min-height: 0; padding: 0 0.45vw; font-size: 0.7vw; }
   .pc-lbl { opacity: 0.65; }
-  .pc-now { font-size: 0.8vw; font-weight: 800; }
-  .pc-next { font-size: 0.62vw; opacity: 0.9; margin-bottom: 0.3vw; }
+  .pc-now { font-size: max(11px, 0.9vw); font-weight: 800; }
+  .pc-next { font-size: max(10px, 0.7vw); opacity: 0.95; margin-bottom: 0.3vw; }
   .pc-bars { display: flex; gap: 1px; align-items: flex-end; height: 3.6vw; }
+  .pc-col { cursor: pointer; }
   .pc-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; position: relative; }
   .pc-bar { width: 100%; border-radius: 2px 2px 0 0; background: rgba(160,175,190,0.55); }
   .pc-col.lvl0 .pc-bar { background: #1fcf6e; }
@@ -844,9 +864,11 @@ const STYLE = `
   .pc-col.past .pc-bar { opacity: 0.32; }
   .pc-col.cur .pc-bar { outline: 1.5px solid #fff; outline-offset: 0; }
   .pc-col.cur::after { content: "▼"; position: absolute; top: -0.2vw; left: 0; right: 0; text-align: center; font-size: 0.45vw; color: #fff; line-height: 1; }
-  .pc-axis { display: flex; gap: 1px; margin-top: 2px; }
-  .pc-tick { flex: 1; min-width: 0; font-size: 0.45vw; opacity: 0.6; text-align: left; white-space: nowrap; overflow: visible; }
-  .pc-tick.day { opacity: 1; font-weight: 700; border-left: 1px solid rgba(255,255,255,0.5); padding-left: 2px; }
+  .pc-axis { display: flex; gap: 1px; margin-top: 3px; }
+  .pc-tip { position: absolute; z-index: 20; pointer-events: none; background: rgba(0,0,0,0.88); border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 3px 8px; font-size: max(11px, 0.8vw); font-weight: 700; white-space: nowrap; transform: translate(-50%, -100%); display: none; }
+  .pricechart { overflow: visible; }
+  .pc-tick { flex: 1; min-width: 0; font-size: max(10px, 0.72vw); font-weight: 600; opacity: 0.9; text-align: left; white-space: nowrap; overflow: visible; line-height: 1.2; }
+  .pc-tick.day { opacity: 1; font-weight: 800; border-left: 1px solid rgba(255,255,255,0.5); padding-left: 2px; }
   .forecast { left: 19%; bottom: 2.5%; width: 32%; }
   .forecast-row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; }
   .fday { text-align: center; font-size: 0.65vw; flex: 1; }
