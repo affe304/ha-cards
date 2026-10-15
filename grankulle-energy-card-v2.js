@@ -29,6 +29,9 @@ const DEFAULT_ENTITIES = {
 
   fronius_power: "sensor.fronius_symo_12_5_3_m_id_20_total_effekt",
   zaptec_power: "sensor.zaptec_laddeffekt",
+  zaptec_i1: "sensor.zaptec_strom_fas_1",
+  zaptec_i2: "sensor.zaptec_strom_fas_2",
+  zaptec_i3: "sensor.zaptec_strom_fas_3",
 
   tibber_price: "sensor.tibber_pulse_grankullevagen_elpris",
   tibber_consumption: "sensor.tibber_pulse_grankullevagen_ackumulerad_forbrukning",
@@ -212,7 +215,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
-          <div class="tag-lbl">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+          <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
         </div>
         <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
           <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
@@ -626,12 +629,22 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!c) return;
     c.querySelectorAll(".cbtn").forEach(b => b.classList.toggle("active", b.dataset[attr] === value));
   }
+  // Which car is on the Zaptec: 1 active phase = Nissan Leaf, 2+ phases = V60. null when not charging.
+  _whichCar() {
+    const zs = this._st("zaptec_status");
+    if (!zs || zs.state !== "connected_charging") return null;
+    const n = ["zaptec_i1", "zaptec_i2", "zaptec_i3"].filter((k) => (this._num(k, 0) || 0) > 3).length;
+    if (n === 0) return null;
+    return { phases: n, name: n === 1 ? "Nissan Leaf" : "V60", short: n === 1 ? "LEAF" : "V60" };
+  }
   _updateControls() {
     const ZSTAT = { connected_charging: "Laddar", connected_finished: "Laddning klar", connected_requesting: "Väntar på start", disconnected: "Ej ansluten" };
     const zs = this._st("zaptec_status");
     const zp = this._num("zaptec_power", 0);
+    const car = this._whichCar();
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
-    const evTxt = evSoc2 !== null ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "";
+    const carTxt = car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "";
+    const evTxt = carTxt + (evSoc2 !== null && (!car || car.name === "V60") ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "");
     this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
     this._markActive("c-zaptec-modes", "mode", zm ? zm.state : "");
@@ -806,6 +819,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-v-grid", this._gridWords(grid, true));
     const evSoc = this._num("ev_soc");
     this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
+    const carNow = this._whichCar();
+    this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short : "LADDBOX");
     const evTgt2 = this._num("ev_soc_target");
     const v60 = this.shadowRoot.getElementById("tag-v60");
     if (v60) v60.style.display = evSoc === null ? "none" : "";
