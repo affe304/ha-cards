@@ -219,6 +219,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="carlamp" id="lamp-leaf" style="left:58.1%; top:54.6%;"></div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:48.5%; top:47%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
+          <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
         <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
           <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
@@ -825,8 +826,26 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const evSoc = this._num("ev_soc");
     const carNow = this._whichCar();
     const sessKwh = this._num("zaptec_session");
-    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW") + (carNow && sessKwh !== null ? " · " + sessKwh.toFixed(1) + " kWh" : ""));
-    this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short : "LADDBOX");
+    const zst = this._st("zaptec_status") ? this._st("zaptec_status").state : "";
+    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
+    this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.name.toUpperCase() + " LADDAR" : "LADDBOX");
+    const sessTxt = sessKwh !== null ? sessKwh.toFixed(1) + " kWh" : "–";
+    if (carNow) {
+      this._set("tag-s1-ev", "Laddat denna session: " + sessTxt);
+      this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A totalt");
+    } else if (zst === "connected_finished") {
+      this._set("tag-s1-ev", "Laddning klar · " + sessTxt + " laddat");
+      this._set("tag-s2-ev", "Bil ansluten");
+    } else if (zst === "connected_requesting") {
+      this._set("tag-s1-ev", "Bil ansluten · väntar på start");
+      this._set("tag-s2-ev", "");
+    } else if (zst === "disconnected") {
+      this._set("tag-s1-ev", "Ingen bil ansluten");
+      this._set("tag-s2-ev", "");
+    } else {
+      this._set("tag-s1-ev", "Pausad · " + sessTxt + " laddat");
+      this._set("tag-s2-ev", "");
+    }
     // pulsing blue light in the windshield of the car that is charging
     const v60Ch = this._st("ev_charging");
     const lampV = this.shadowRoot.getElementById("lamp-v60"), lampL = this.shadowRoot.getElementById("lamp-leaf");
@@ -1013,6 +1032,8 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
+  .tag-sub { font-size: 0.58vw; opacity: 0.85; margin-top: 2px; white-space: nowrap; }
+  .tag-sub:empty { display: none; }
 
   .navbar {
     position: absolute; left: 2%; bottom: 2%; right: 2%;
