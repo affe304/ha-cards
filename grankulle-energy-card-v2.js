@@ -143,16 +143,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             <div class="h1">GRANKULLEVÄGEN 19</div>
             <div class="sub">ENERGI · HEM · VÄDER · TRÄDGÅRD</div>
           </div>
-          <div class="weather-now">
-            <span id="w-icon">–</span>
-            <span id="w-temp" class="w-temp">–,– °C</span>
-            <span id="w-desc" class="w-desc">–</span>
-          </div>
-          <div class="mini-stats">
-            <div><span id="w-wind">– m/s</span><small>VIND</small></div>
-            <div><span id="w-rain">– mm</span><small>REGN</small></div>
-            <div><span id="w-hum">– %</span><small>LUFTFUKT.</small></div>
-          </div>
           <div class="clock-box">
             <div id="clock" class="clock">--:--</div>
             <div id="clockdate" class="clockdate">–</div>
@@ -837,7 +827,7 @@ const STYLE = `
   .energy-cols b { font-size: 0.9vw; }
 
 
-  .pricechart { left: 20.5%; top: 6.5%; width: 49.5%; box-sizing: border-box; padding: 0.7% 1%; }
+  .pricechart { left: 20.5%; top: 1.5%; width: 49.5%; box-sizing: border-box; padding: 0.7% 1%; }
   .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2vw; }
   .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
   .pc-share .cbtn { min-height: 0; padding: 0 0.45vw; font-size: 0.7vw; }
