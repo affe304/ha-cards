@@ -33,6 +33,13 @@ const DEFAULT_ENTITIES = {
   tibber_price: "sensor.tibber_pulse_grankullevagen_elpris",
   tibber_consumption: "sensor.tibber_pulse_grankullevagen_ackumulerad_forbrukning",
   tibber_production: "sensor.tibber_pulse_grankullevagen_ackumulerad_produktion",
+  tibber_cost: "sensor.tibber_pulse_grankullevagen_ackumulerad_kostnad",
+  tibber_reward: "sensor.tibber_pulse_grankullevagen_ackumulerad_beloning",
+  solar_yield_total: "sensor.fronius_symo_12_5_3_m_id_20_total_avkastning",
+  mp_grid_to_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ac_in_1_till_vaxelriktare",
+  mp_pv_to_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ut_till_vaxelriktare",
+  dc_charge_energy: "sensor.kallare_gx_device_dc_batteri_laddningsenergi",
+  dc_discharge_energy: "sensor.kallare_gx_device_dc_batteri_urladdningsenergi",
 
   weather_temp: "sensor.st_00150138_temperatur",
   weather_humidity: "sensor.st_00150138_luftfuktighet",
@@ -179,11 +186,15 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <div class="panel energyday">
-          <div class="panel-title">Dagens energi</div>
-          <div class="energy-cols">
-            <div><span class="lbl">☀️ Sol</span><b id="v-day-solar">– kWh</b></div>
-            <div><span class="lbl">🏠 Hus</span><b id="v-day-house">– kWh</b></div>
-          </div>
+          <div class="panel-title">Dygnet</div>
+          <div class="row"><span>☀️ Sol</span><b id="v-day-solar">–</b></div>
+          <div class="row"><span>⬇️ Köpt</span><b id="v-day-buy">–</b></div>
+          <div class="row"><span>⬆️ Sålt</span><b id="v-day-sell">–</b></div>
+          <div class="row"><span>💰 Kostnad</span><b id="v-day-net">–</b></div>
+          <div class="row small"><span>Snitt köpt</span><b id="v-day-avg">–</b></div>
+          <div class="panel-title" style="margin:6px 0 2px">Energi i batteriet</div>
+          <div class="row"><span id="v-bc-kwh">–</span><b id="v-bc-cost">–</b></div>
+          <div class="row small"><span>Lagrat värde</span><b id="v-bc-val">–</b></div>
         </div>
 
         <!-- overlay tags positioned over the photo, matching the reference layout -->
@@ -342,12 +353,84 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     setInterval(() => this._tickClock(), 30000);
     this._fetchPrices();
     setInterval(() => this._fetchPrices(), 15 * 60000);
+    this._fetchDay();
+    setInterval(() => this._fetchDay(), 10 * 60000);
     setInterval(() => this._renderPrices(), 30000);
     if (window.innerWidth < 900) this._toggleControls();
     this._updateControls();
     setInterval(() => this._updateControls(), 1000);
   }
 
+
+  // ---------- daily numbers + cost of the energy stored in the battery ----------
+  async _fetchDay() {
+    if (!this._hass || !this._hass.callWS) return;
+    const ws = (q) => this._hass.callWS(Object.assign({ type: "recorder/statistics_during_period" }, q));
+    try {
+      const mid = new Date(); mid.setHours(0, 0, 0, 0);
+      const sid = this._e("solar_yield_total");
+      if (sid) {
+        const r = await ws({ start_time: mid.toISOString(), end_time: new Date().toISOString(), statistic_ids: [sid], period: "day", types: ["change"] });
+        const row = r[sid] && r[sid][r[sid].length - 1];
+        this._solarToday = row && row.change != null ? row.change : null;
+      }
+    } catch (e) { console.warn("grankulle: solar stats failed", e); }
+    try {
+      const ids = { gin: this._e("mp_grid_to_inv"), pv: this._e("mp_pv_to_inv"), dcc: this._e("dc_charge_energy"), dcd: this._e("dc_discharge_energy"), soc: this._e("battery_soc"), price: this._e("tibber_price") };
+      if (Object.values(ids).some((v) => !v)) return;
+      const r = await ws({ start_time: new Date(Date.now() - 8 * 86400e3).toISOString(), end_time: new Date().toISOString(), statistic_ids: Object.values(ids), period: "hour", types: ["change", "mean"] });
+      const by = {};
+      Object.keys(ids).forEach((k) => { by[k] = {}; (r[ids[k]] || []).forEach((p) => { by[k][p.start] = p; }); });
+      const times = Object.keys(by.dcc).map(Number).sort((a, b) => a - b);
+      if (times.length < 24) return;
+      const chg = (k, t) => Math.max(0, (by[k][t] && by[k][t].change) || 0);
+      const mean = (k, t) => (by[k][t] && by[k][t].mean != null ? by[k][t].mean : null);
+      // capacity (kWh) estimated from net DC energy vs SoC change
+      let num = 0, den = 0;
+      for (let i = 1; i < times.length; i++) {
+        const a = mean("soc", times[i - 1]), b = mean("soc", times[i]);
+        if (a == null || b == null) continue;
+        const d = (b - a) / 100, net = chg("dcc", times[i]) - chg("dcd", times[i]);
+        num += net * d; den += d * d;
+      }
+      let cap = den > 0 ? num / den : 19;
+      if (!(cap > 8 && cap < 40)) cap = 19;
+      // average-cost model: grid-charged energy costs the spot price, solar-charged energy costs 0
+      let wsum = 0, wc = 0;
+      times.forEach((t) => { const e = chg("gin", t), p = mean("price", t); if (p != null && e > 0) { wsum += e * p; wc += e; } });
+      let c = wc ? wsum / wc : 1.2;
+      const soc0 = mean("soc", times[0]);
+      let S = Math.max(0.2, (soc0 != null ? soc0 : 50) / 100 * cap);
+      let lastP = c;
+      times.forEach((t) => {
+        let p = mean("price", t); if (p == null) p = lastP; else lastP = p;
+        const ec = chg("dcc", t), ed = chg("dcd", t), g = chg("gin", t), pv = chg("pv", t);
+        const gs = g + pv > 0 ? g / (g + pv) : (ec > 0 ? 1 : 0);
+        if (ec > 0) { c = (S * c + ec * gs * p) / (S + ec); S += ec; }
+        if (ed > 0) S = Math.max(0.2, S - ed);
+      });
+      this._battCost = { c, cap };
+    } catch (e) { console.warn("grankulle: battery cost failed", e); }
+    this._renderDay();
+  }
+  _renderDay() {
+    const f1 = (v, u) => (v == null || !isFinite(v) ? "–" : v.toFixed(1) + " " + u);
+    const kr = (v, d = 0) => (v == null || !isFinite(v) ? "–" : v.toFixed(d) + " kr");
+    const buy = this._num("tibber_consumption"), sell = this._num("tibber_production");
+    const cost = this._num("tibber_cost"), reward = this._num("tibber_reward");
+    this._set("v-day-solar", f1(this._solarToday, "kWh"));
+    this._set("v-day-buy", buy == null ? "–" : buy.toFixed(1) + " kWh · " + kr(cost));
+    this._set("v-day-sell", sell == null ? "–" : sell.toFixed(1) + " kWh · " + kr(reward));
+    this._set("v-day-net", cost == null ? "–" : kr(cost - (reward || 0)));
+    this._set("v-day-avg", buy > 0.1 && cost != null ? (cost / buy).toFixed(2) + " kr/kWh" : "–");
+    const bc = this._battCost, soc = this._num("battery_soc");
+    if (bc && soc != null) {
+      const kwh = soc / 100 * bc.cap;
+      this._set("v-bc-kwh", kwh.toFixed(1) + " kWh");
+      this._set("v-bc-cost", "≈ " + bc.c.toFixed(2) + " kr/kWh");
+      this._set("v-bc-val", "≈ " + (kwh * bc.c).toFixed(1) + " kr");
+    }
+  }
 
   // ---------- price plan (Tibber) ----------
   async _fetchPrices() {
@@ -757,8 +840,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       }
     }
 
-    this._set("v-day-solar", this._fmt(this._num("tibber_production"), 1, " kWh"));
-    this._set("v-day-house", this._fmt(this._num("tibber_consumption"), 1, " kWh"));
+    this._renderDay();
 
     const wxTemp = this._num("weather_temp");
     const wxHum = this._num("weather_humidity");
@@ -840,7 +922,7 @@ const STYLE = `
   .price-sub { font-size: 0.55vw; opacity: 0.7; margin-top: 2px; }
   .batt { left: 2%; top: 38%; text-align: center; }
   .gauge { width: 4.6vw; height: 4.6vw; margin: 4px auto; display: block; }
-  .energyday { left: 2%; top: 80%; }
+  .energyday { left: 2%; top: 62%; width: 14.3%; }
   .energy-cols { display: flex; gap: 16px; }
   .energy-cols .lbl { display: block; font-size: 0.6vw; opacity: 0.7; }
   .energy-cols b { font-size: 0.9vw; }
