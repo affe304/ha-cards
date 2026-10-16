@@ -867,7 +867,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (gridLost) {
       this._set("al-title", "⚠ LARM · ELNÄTET ÄR BORTA");
       const since = lost ? new Date(lost.last_changed) : null;
-      const soc = this._num("battery_soc"), lim = this._num("soc_limit", 20);
+      const soc = this._num("battery_soc"), lim = 0;
       const cap = (this._battCost && this._battCost.cap) || 19;
       const avg = (k) => this._lbuf.reduce((a, x) => a + x[k], 0) / this._lbuf.length;
       const dis = -avg("batt");
@@ -875,7 +875,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       let timeTxt = "";
       if (soc === null) timeTxt = "Batteriets nivå okänd";
       else if (avg("batt") > 0.05) timeTxt = "Batteriet laddas just nu";
-      else if (soc <= lim) timeTxt = "Batteriet har nått " + lim.toFixed(0) + " %";
+      else if (soc <= lim) timeTxt = "Batteriet är tomt (0 %)";
       else if (load < 0.05) timeTxt = "Nästan ingen förbrukning";
       else {
         const hrs = ((soc - lim) / 100 * cap) / load;
@@ -883,7 +883,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         timeTxt = "Batteriet räcker ca " + (h > 0 ? h + " tim " : "") + m + " min";
       }
       this._set("al-time", timeTxt);
-      this._set("al-sub", (soc !== null ? "Batteri " + Math.round(soc) + " % → " + lim.toFixed(0) + " %-gränsen" : "") + " · drar " + load.toFixed(2) + " kW" + (since ? " · elavbrott sedan " + hhmm(since) : ""));
+      this._set("al-sub", (soc !== null ? "Batteri " + Math.round(soc) + " % → 0 %" : "") + " · drar " + load.toFixed(2) + " kW" + (since ? " · elavbrott sedan " + hhmm(since) : ""));
       this._set("al-adv", "Stäng av alla onödiga förbrukare: varmvattenberedare (VVB), element, luftvärmepump, golvvärme, laddning av bil m.m.");
     } else {
       this._set("al-title", "⚠ VICTRON-LARM");
