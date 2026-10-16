@@ -14,6 +14,9 @@
 
 const DEFAULT_ENTITIES = {
   battery_soc: "sensor.kallare_gx_device_dc_batteri_laddning",
+  grid_phases: "sensor.kallare_gx_device_elnatsfaser",
+  grid_lost_alarm: "sensor.multiplus_ii_48_5000_70_50_id_276_larm_om_forlorat_elnat",
+  soc_limit: "sensor.kallare_gx_device_aktiv_soc_grans",
   battery_power: "sensor.kallare_gx_device_dc_batteri_effekt",
   battery_voltage: "sensor.kallare_gx_device_dc_batteri_spanning",
   battery_current: "sensor.kallare_gx_device_dc_batteri_strom",
@@ -159,6 +162,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             <div id="clock" class="clock">--:--</div>
             <div id="clockdate" class="clockdate">–</div>
           </div>
+        </div>
+
+        <div class="alarmbanner" id="alarm" style="display:none">
+          <div class="al-title" id="al-title">⚠ LARM</div>
+          <div class="al-time" id="al-time"></div>
+          <div class="al-sub" id="al-sub"></div>
+          <div class="al-adv" id="al-adv"></div>
+          <div class="al-other" id="al-other"></div>
         </div>
 
         <div class="panel now">
@@ -821,9 +832,72 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (this._num("weather_humidity") === null) this._set("w-hum", this._fmt(c.relative_humidity_2m, 0, " %"));
   }
 
+  // Victron alarms: grid lost (with battery run-time estimate) and any other active alarm/warning on the Victron devices.
+  _updateAlarm() {
+    const box = this.shadowRoot.getElementById("alarm");
+    if (!box) return;
+    const hass = this._hass;
+    const now = Date.now();
+    // sample the load for a 5 min average
+    const houseKw = ((this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))) / 1000;
+    const battKw = (this._num("battery_power", 0)) / 1000;
+    this._lbuf = (this._lbuf || []).filter((x) => now - x.t < 5 * 60000);
+    this._lbuf.push({ t: now, house: houseKw, batt: battKw });
+    // other active alarms (throttled)
+    if (!this._alarmScan || now - this._alarmScan.t > 10000) {
+      const lostId = this._e("grid_lost_alarm");
+      const found = [];
+      Object.keys(hass.states).forEach((id) => {
+        if (id === lostId || !/kallare_gx|multiplus|pylontech|fronius|mppt/i.test(id)) return;
+        const d = id.split(".")[0];
+        if (d !== "sensor" && d !== "binary_sensor") return;
+        const st = hass.states[id];
+        const bad = (d === "sensor" && (st.state === "alarm" || st.state === "warning")) || (d === "binary_sensor" && st.attributes.device_class === "problem" && st.state === "on");
+        if (bad) found.push((st.attributes.friendly_name || id).replace(/^.*?\)\s*/, "").replace(/^GX Device\s*/, "") + (st.state === "warning" ? " (varning)" : ""));
+      });
+      this._alarmScan = { t: now, found };
+    }
+    const lost = this._st("grid_lost_alarm");
+    const phases = this._num("grid_phases");
+    const gridLost = (lost && lost.state === "alarm") || (phases !== null && phases === 0 && !!lost);
+    const others = this._alarmScan.found;
+    if (!gridLost && !others.length) { box.style.display = "none"; return; }
+    box.style.display = "";
+    const hhmm = (d) => d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    if (gridLost) {
+      this._set("al-title", "⚠ LARM · ELNÄTET ÄR BORTA");
+      const since = lost ? new Date(lost.last_changed) : null;
+      const soc = this._num("battery_soc"), lim = this._num("soc_limit", 20);
+      const cap = (this._battCost && this._battCost.cap) || 19;
+      const avg = (k) => this._lbuf.reduce((a, x) => a + x[k], 0) / this._lbuf.length;
+      const dis = -avg("batt");
+      const load = dis > 0.05 ? dis : avg("house");
+      let timeTxt = "";
+      if (soc === null) timeTxt = "Batteriets nivå okänd";
+      else if (avg("batt") > 0.05) timeTxt = "Batteriet laddas just nu";
+      else if (soc <= lim) timeTxt = "Batteriet har nått " + lim.toFixed(0) + " %";
+      else if (load < 0.05) timeTxt = "Nästan ingen förbrukning";
+      else {
+        const hrs = ((soc - lim) / 100 * cap) / load;
+        const tot = Math.round(hrs * 60), h = Math.floor(tot / 60), m = tot % 60;
+        timeTxt = "Batteriet räcker ca " + (h > 0 ? h + " tim " : "") + m + " min";
+      }
+      this._set("al-time", timeTxt);
+      this._set("al-sub", (soc !== null ? "Batteri " + Math.round(soc) + " % → " + lim.toFixed(0) + " %-gränsen" : "") + " · drar " + load.toFixed(2) + " kW" + (since ? " · elavbrott sedan " + hhmm(since) : ""));
+      this._set("al-adv", "Stäng av alla onödiga förbrukare: varmvattenberedare (VVB), element, luftvärmepump, golvvärme, laddning av bil m.m.");
+    } else {
+      this._set("al-title", "⚠ VICTRON-LARM");
+      this._set("al-time", others[0]);
+      this._set("al-sub", "");
+      this._set("al-adv", "Kontrollera Victron-anläggningen.");
+    }
+    this._set("al-other", gridLost && others.length ? "Övriga larm: " + others.join(", ") : (!gridLost && others.length > 1 ? "Övriga larm: " + others.slice(1).join(", ") : ""));
+  }
+
   _update() {
     const hass = this._hass;
     if (!hass) return;
+    try { this._updateAlarm(); } catch (e) { console.warn("grankulle: alarm failed", e); }
     this._applyStationWind();
 
     const solar = (this._num("fronius_power", 0)) / 1000;
@@ -1066,6 +1140,22 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
+  .alarmbanner {
+    position: absolute; left: 50%; top: 14%; transform: translateX(-50%); width: 40%; z-index: 20; box-sizing: border-box;
+    background: rgba(110, 8, 8, 0.93); border: 2px solid #ff4d4d; border-radius: 12px; padding: 0.7vw 1vw; color: #fff;
+    text-align: center; animation: alarmpulse 1.4s ease-in-out infinite;
+  }
+  @keyframes alarmpulse {
+    0%, 100% { box-shadow: 0 0 0.6vw rgba(255, 60, 60, 0.45); }
+    50% { box-shadow: 0 0 1.8vw rgba(255, 60, 60, 0.95); }
+  }
+  .al-title { font-size: 1.15vw; font-weight: 800; letter-spacing: 0.06em; }
+  .al-time { font-size: 1.6vw; font-weight: 800; margin-top: 0.25vw; }
+  .al-sub { font-size: 0.8vw; opacity: 0.92; margin-top: 0.2vw; }
+  .al-adv { font-size: 0.78vw; margin-top: 0.45vw; padding-top: 0.4vw; border-top: 1px solid rgba(255,255,255,0.3); font-weight: 600; }
+  .al-other { font-size: 0.72vw; opacity: 0.9; margin-top: 0.3vw; }
+  .al-other:empty { display: none; }
+  @media (max-width: 900px) { .alarmbanner { width: 94%; padding: 10px 12px; } .al-title { font-size: 15px; } .al-time { font-size: 20px; } .al-sub, .al-adv, .al-other { font-size: 12px; } }
   .tag-sub { font-size: 0.58vw; opacity: 0.85; margin-top: 2px; white-space: nowrap; }
   .tag-sub:empty { display: none; }
 
