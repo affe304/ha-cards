@@ -884,7 +884,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       }
       this._set("al-time", timeTxt);
       this._set("al-sub", (soc !== null ? "Batteri " + Math.round(soc) + " % → 0 %" : "") + " · drar " + load.toFixed(2) + " kW" + (since ? " · elavbrott sedan " + hhmm(since) : ""));
-      this._set("al-adv", "Stäng av alla onödiga förbrukare: varmvattenberedare (VVB), element, luftvärmepump, golvvärme, laddning av bil m.m.");
+      this._set("al-adv", "Stäng av alla onödiga förbrukare: varmvattenberedare (VVB), element, luftvärmepump, golvvärme, avfuktare i krypgrund, laddning av bil m.m.");
     } else {
       this._set("al-title", "⚠ VICTRON-LARM");
       this._set("al-time", others[0]);
