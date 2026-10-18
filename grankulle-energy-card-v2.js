@@ -164,6 +164,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </div>
         </div>
 
+        <div class="panel eventlog">
+          <div class="panel-title">Senaste dygnet · händelser</div>
+          <div id="ev-list"><div class="ev-d">Hämtar…</div></div>
+        </div>
+
         <div class="alarmbanner" id="alarm" style="display:none">
           <div class="al-title" id="al-title">⚠ LARM</div>
           <div class="al-time" id="al-time"></div>
@@ -377,6 +382,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     setInterval(() => this._fetchDay(), 10 * 60000);
     setTimeout(() => this._fetchSession(), 3000);
     setInterval(() => this._fetchSession(), 2 * 60000);
+    setTimeout(() => this._fetchEvents(), 4000);
+    setInterval(() => this._fetchEvents(), 5 * 60000);
     setInterval(() => this._renderPrices(), 30000);
     if (window.innerWidth < 900) this._toggleControls();
     this._updateControls();
@@ -441,6 +448,89 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._renderDay();
   }
   // Cost of the current Zaptec session at the Tibber price (as if all energy came from the grid; solar/battery are not netted out).
+  // ---------- event list: what happened in the last 24 h ----------
+  async _fetchEvents() {
+    if (!this._hass || !this._hass.callWS) return;
+    try {
+      const now = Date.now(), t0 = now - 24 * 3600e3, B = 5 * 60000;
+      const sid = (k) => this._e(k);
+      const hIds = [sid("grid_lost_alarm"), sid("zaptec_status")].filter(Boolean);
+      const sIds = ["battery_soc", "dc_discharge_energy", "zaptec_energy_total", "tibber_price", "zaptec_i1", "zaptec_i2", "zaptec_i3"].map(sid).filter(Boolean);
+      const hist = await this._hass.callWS({ type: "history/history_during_period", start_time: new Date(t0 - 3600e3).toISOString(), end_time: new Date(now).toISOString(), entity_ids: hIds, minimal_response: true, no_attributes: true, significant_changes_only: false });
+      const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(t0 - 3600e3).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: sIds, period: "5minute", types: ["change", "mean"] });
+      const rows = (k) => (st[sid(k)] || []).map((r) => ({ t: typeof r.start === "number" ? r.start : Date.parse(r.start), change: r.change, mean: r.mean }));
+      const intervals = (id, pred) => {
+        const rs = (hist[id] || []).map((x) => { const v = x.lu || x.lc || x.last_updated || x.last_changed; return { t: typeof v === "number" ? v * 1000 : Date.parse(v), s: x.s !== undefined ? x.s : x.state }; });
+        const out = []; let cur = null;
+        rs.forEach((r) => { const on = pred(r.s); if (on && !cur) cur = { s: r.t, e: null }; if (!on && cur) { cur.e = r.t; out.push(cur); cur = null; } });
+        if (cur) out.push(cur);
+        return out;
+      };
+      const inR = (arr, s, e) => arr.filter((r) => r.t >= Math.floor(s / B) * B - B && r.t <= (e || now));
+      const soc = rows("battery_soc"), dcd = rows("dc_discharge_energy"), en = rows("zaptec_energy_total"), pr = rows("tibber_price");
+      const cur = [rows("zaptec_i1"), rows("zaptec_i2"), rows("zaptec_i3")];
+      const near = (arr, t) => { let best = null; arr.forEach((r) => { if (r.mean != null && r.t <= t + B && (!best || r.t > best.t)) best = r; }); return best ? best.mean : null; };
+      const ev = [];
+      const lostId = sid("grid_lost_alarm");
+      if (lostId) intervals(lostId, (s) => s === "alarm").forEach((iv) => {
+        if (iv.e !== null && iv.e < t0) return;
+        const end = iv.e || now;
+        const dis = inR(dcd, iv.s, iv.e).reduce((a, r) => a + Math.max(0, r.change || 0), 0);
+        const socA = near(soc, iv.s), socB = near(soc, end);
+        const socs = inR(soc, iv.s, iv.e).map((r) => r.mean).filter((v) => v != null);
+        const lows = socs.length ? Math.min.apply(null, socs) : null;
+        const hrs = (end - iv.s) / 3600e3;
+        const parts = [];
+        if (socA != null && socB != null) parts.push("Batteri " + Math.round(socA) + " % → " + Math.round(socB) + " %");
+        if (dis > 0.05) parts.push(dis.toFixed(1) + " kWh ur batteriet");
+        if (dis > 0.05 && hrs > 0.1) parts.push("snitt " + (dis / hrs).toFixed(2) + " kW");
+        if (lows != null) parts.push("lägst " + Math.round(lows) + " %");
+        ev.push({ t: iv.s, sev: "red", icon: "⚡", title: iv.e ? "Elavbrott " + this._evT(iv.s) + "–" + this._evT(iv.e, iv.s) + " (" + this._evDur(end - iv.s) + ")" : "Elavbrott pågår sedan " + this._evT(iv.s) + " (" + this._evDur(end - iv.s) + ")", detail: parts.join(" · ") });
+      });
+      const zId = sid("zaptec_status");
+      if (zId) {
+        const raw = intervals(zId, (s) => s === "connected_charging").map((iv) => ({ s: iv.s, e: iv.e }));
+        const merged = [];
+        raw.forEach((iv) => {
+          const last = merged[merged.length - 1];
+          if (last && last.e !== null && iv.s - last.e < 20 * 60000) last.e = iv.e; else merged.push({ s: iv.s, e: iv.e });
+        });
+        merged.forEach((iv) => {
+          if (iv.e !== null && iv.e < t0) return;
+          const bs = inR(en, iv.s, iv.e);
+          const kwh = bs.reduce((a, r) => a + Math.max(0, r.change || 0), 0);
+          let lastP = 1, cost = 0;
+          bs.forEach((r) => { const p = near(pr, r.t); if (p != null) lastP = p; cost += Math.max(0, r.change || 0) * lastP; });
+          const nph = cur.filter((c) => Math.max.apply(null, [0].concat(inR(c, iv.s, iv.e).map((r) => r.mean || 0))) > 4).length;
+          if (kwh < 0.15 && iv.e !== null) return;
+          const car = nph === 1 ? "Nissan Leaf" : nph >= 2 ? "V60" : "Bil";
+          ev.push({ t: iv.s, sev: "green", icon: "🔌", title: "Laddning " + car + " " + this._evT(iv.s) + (iv.e ? "–" + this._evT(iv.e, iv.s) : " · pågår"), detail: kwh.toFixed(1) + " kWh · ≈ " + cost.toFixed(cost < 10 ? 1 : 0) + " kr till nätpris" + (nph ? " · " + nph + (nph > 1 ? " faser" : " fas") : "") });
+        });
+      }
+      ev.sort((a, b) => b.t - a.t);
+      this._events = ev.slice(0, 8);
+    } catch (e) { console.warn("grankulle: events failed", e); }
+    this._renderEvents();
+  }
+  _evT(t, ref) {
+    const d = new Date(t), today = new Date(); today.setHours(0, 0, 0, 0);
+    const hm = d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    const dd = new Date(t); dd.setHours(0, 0, 0, 0);
+    if (ref !== undefined) { const rd = new Date(ref); rd.setHours(0, 0, 0, 0); return dd.getTime() === rd.getTime() ? hm : "nästa dag " + hm; }
+    if (dd.getTime() === today.getTime()) return "i dag " + hm;
+    if (dd.getTime() === today.getTime() - 86400e3) return "igår " + hm;
+    return hm;
+  }
+  _evDur(ms) {
+    const m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60);
+    return h > 0 ? h + " tim " + (m % 60) + " min" : m + " min";
+  }
+  _renderEvents() {
+    const box = this.shadowRoot.getElementById("ev-list");
+    if (!box) return;
+    const ev = this._events || [];
+    box.innerHTML = ev.length ? ev.map((e) => '<div class="ev ev-' + e.sev + '"><div class="ev-t">' + e.icon + " " + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="ev-d">Inga händelser det senaste dygnet</div>';
+  }
   _sessCostTxt() {
     const c = this._sessCost;
     if (!c || !isFinite(c.cost)) return "";
@@ -1140,6 +1230,13 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
+  .eventlog { left: 18.5%; top: 81.5%; width: 44%; max-height: 17.5%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
+  .ev { border-left: 3px solid #888; padding: 0.1vw 0 0.1vw 0.5vw; margin-top: 0.3vw; }
+  .ev-red { border-left-color: #ff5a5a; }
+  .ev-green { border-left-color: #3ddc84; }
+  .ev-t { font-size: 0.75vw; font-weight: 700; }
+  .ev-d { font-size: 0.62vw; opacity: 0.85; }
+  @media (max-width: 900px) { .eventlog { position: static; width: auto; max-height: none; margin: 8px; } .ev-t { font-size: 13px; } .ev-d { font-size: 11px; } }
   .alarmbanner {
     position: absolute; left: 50%; top: 14%; transform: translateX(-50%); width: 40%; z-index: 20; box-sizing: border-box;
     background: rgba(110, 8, 8, 0.93); border: 2px solid #ff4d4d; border-radius: 12px; padding: 0.7vw 1vw; color: #fff;
