@@ -503,9 +503,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           let lastP = 1, cost = 0, gridK = 0;
           bs.forEach((r) => { const p = near(pr, r.t); if (p != null) lastP = p; const k = Math.max(0, r.change || 0), sh = mix(r.t), f = sh == null ? 1 : sh; cost += k * f * lastP; gridK += k * f; });
           const nph = cur.filter((c) => Math.max.apply(null, [0].concat(inR(c, iv.s, iv.e).map((r) => r.mean || 0))) > 4).length;
+          let kwhS = kwh, costS = cost, pctS = kwh > 0 ? (gridK / kwh) * 100 : null;
+          // ongoing session: the live session counter is ahead of the 5-min statistics, so use the session figures
+          const sc = this._sessCost, sNow = this._num("zaptec_session");
+          if (iv.e === null && sc && isFinite(sc.cost) && sNow !== null && sNow > kwh) { kwhS = sNow; costS = sc.cost; pctS = sc.gridPct; }
           if (kwh < 0.15 && iv.e !== null) return;
           const car = nph === 1 ? "Nissan Leaf" : nph >= 2 ? "V60" : "Bil";
-          ev.push({ t: iv.s, sev: "green", icon: "🔌", title: "Laddning " + car + " " + this._evT(iv.s) + (iv.e ? "–" + this._evT(iv.e, iv.s) : " · pågår"), detail: kwh.toFixed(1) + " kWh · " + (kwh > 0 ? Math.round((gridK / kwh) * 100) + " % från nätet · " : "") + "≈ " + cost.toFixed(cost < 10 ? 1 : 0) + " kr" + (nph ? " · " + nph + (nph > 1 ? " faser" : " fas") : "") });
+          ev.push({ t: iv.s, sev: "green", icon: "🔌", title: "Laddning " + car + " " + this._evT(iv.s) + (iv.e ? "–" + this._evT(iv.e, iv.s) : " · pågår"), detail: kwhS.toFixed(1) + " kWh · " + (pctS != null && kwhS > 0 ? Math.round(pctS) + " % från nätet · " : "") + "≈ " + costS.toFixed(costS < 10 ? 1 : 0) + " kr" + (nph ? " · " + nph + (nph > 1 ? " faser" : " fas") : "") });
         });
       }
       ev.sort((a, b) => b.t - a.t);
