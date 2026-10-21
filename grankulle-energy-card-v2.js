@@ -236,7 +236,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="carlamp" id="lamp-leaf" style="left:58.1%; top:54.6%;"></div>
         <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:53.5%; top:48.5%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
-          <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s3-ev" title="Energin i sessionen × Tibbers timpris (som om allt kom från nätet; sol och batteri är inte avdragna)"></div><div class="tag-sub" id="tag-s2-ev"></div>
+          <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s3-ev" title="Bara den del som kom från nätet × Tibbers timpris. Sol och batteri räknas som gratis. Beräknat i 5-minutersteg utifrån husets effektbalans (nät, sol, batteri) – ej mätt per bil."></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
         <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
           <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
@@ -447,7 +447,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     } catch (e) { console.warn("grankulle: battery cost failed", e); }
     this._renderDay();
   }
-  // Cost of the current Zaptec session at the Tibber price (as if all energy came from the grid; solar/battery are not netted out).
+  // Session / event charging cost = grid share of each 5-min bucket x Tibber price (solar and battery energy counted as free).
   // ---------- event list: what happened in the last 24 h ----------
   async _fetchEvents() {
     if (!this._hass || !this._hass.callWS) return;
@@ -455,7 +455,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       const now = Date.now(), t0 = now - 24 * 3600e3, B = 5 * 60000;
       const sid = (k) => this._e(k);
       const hIds = [sid("grid_lost_alarm"), sid("zaptec_status")].filter(Boolean);
-      const sIds = ["battery_soc", "dc_discharge_energy", "zaptec_energy_total", "tibber_price", "zaptec_i1", "zaptec_i2", "zaptec_i3"].map(sid).filter(Boolean);
+      const sIds = ["battery_soc", "dc_discharge_energy", "zaptec_energy_total", "tibber_price", "zaptec_i1", "zaptec_i2", "zaptec_i3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "house_power_l1", "house_power_l2", "house_power_l3", "fronius_power", "battery_power"].map(sid).filter(Boolean);
       const hist = await this._hass.callWS({ type: "history/history_during_period", start_time: new Date(t0 - 3600e3).toISOString(), end_time: new Date(now).toISOString(), entity_ids: hIds, minimal_response: true, no_attributes: true, significant_changes_only: false });
       const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(t0 - 3600e3).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: sIds, period: "5minute", types: ["change", "mean"] });
       const rows = (k) => (st[sid(k)] || []).map((r) => ({ t: typeof r.start === "number" ? r.start : Date.parse(r.start), change: r.change, mean: r.mean }));
@@ -469,6 +469,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       const inR = (arr, s, e) => arr.filter((r) => r.t >= Math.floor(s / B) * B - B && r.t <= (e || now));
       const soc = rows("battery_soc"), dcd = rows("dc_discharge_energy"), en = rows("zaptec_energy_total"), pr = rows("tibber_price");
       const cur = [rows("zaptec_i1"), rows("zaptec_i2"), rows("zaptec_i3")];
+      const mix = this._mixFn(st);
       const near = (arr, t) => { let best = null; arr.forEach((r) => { if (r.mean != null && r.t <= t + B && (!best || r.t > best.t)) best = r; }); return best ? best.mean : null; };
       const ev = [];
       const lostId = sid("grid_lost_alarm");
@@ -499,12 +500,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           if (iv.e !== null && iv.e < t0) return;
           const bs = inR(en, iv.s, iv.e);
           const kwh = bs.reduce((a, r) => a + Math.max(0, r.change || 0), 0);
-          let lastP = 1, cost = 0;
-          bs.forEach((r) => { const p = near(pr, r.t); if (p != null) lastP = p; cost += Math.max(0, r.change || 0) * lastP; });
+          let lastP = 1, cost = 0, gridK = 0;
+          bs.forEach((r) => { const p = near(pr, r.t); if (p != null) lastP = p; const k = Math.max(0, r.change || 0), sh = mix(r.t), f = sh == null ? 1 : sh; cost += k * f * lastP; gridK += k * f; });
           const nph = cur.filter((c) => Math.max.apply(null, [0].concat(inR(c, iv.s, iv.e).map((r) => r.mean || 0))) > 4).length;
           if (kwh < 0.15 && iv.e !== null) return;
           const car = nph === 1 ? "Nissan Leaf" : nph >= 2 ? "V60" : "Bil";
-          ev.push({ t: iv.s, sev: "green", icon: "🔌", title: "Laddning " + car + " " + this._evT(iv.s) + (iv.e ? "–" + this._evT(iv.e, iv.s) : " · pågår"), detail: kwh.toFixed(1) + " kWh · ≈ " + cost.toFixed(cost < 10 ? 1 : 0) + " kr till nätpris" + (nph ? " · " + nph + (nph > 1 ? " faser" : " fas") : "") });
+          ev.push({ t: iv.s, sev: "green", icon: "🔌", title: "Laddning " + car + " " + this._evT(iv.s) + (iv.e ? "–" + this._evT(iv.e, iv.s) : " · pågår"), detail: kwh.toFixed(1) + " kWh · " + (kwh > 0 ? Math.round((gridK / kwh) * 100) + " % från nätet · " : "") + "≈ " + cost.toFixed(cost < 10 ? 1 : 0) + " kr" + (nph ? " · " + nph + (nph > 1 ? " faser" : " fas") : "") });
         });
       }
       ev.sort((a, b) => b.t - a.t);
@@ -531,6 +532,29 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const ev = this._events || [];
     box.innerHTML = ev.length ? ev.map((e) => '<div class="ev ev-' + e.sev + '"><div class="ev-t">' + e.icon + " " + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="ev-d">Inga händelser det senaste dygnet</div>';
   }
+  // Share (0..1) of the house load -- and thus of the car -- that was bought from the grid right now.
+  // Inputs in kW: g = grid import (+), h = house incl. car, pv = solar, b = battery charge (+).
+  // Solar surplus is assumed to charge the battery first, so only the rest of the battery charging is grid energy.
+  // The car is treated as drawing the same mix of grid / solar / battery as the rest of the house (average mix).
+  _gridShare(g, h, pv, b) {
+    if (g == null || h == null) return null;
+    const H = Math.max(0.05, h);
+    const pvSurplus = Math.max(0, (pv || 0) - H);
+    const gridToBatt = Math.max(0, (b || 0) - pvSurplus);
+    return Math.min(H, Math.max(0, g - gridToBatt)) / H;
+  }
+  // Builds share(t) from a statistics_during_period result that includes the 5-minute means of grid, house, solar and battery power.
+  _mixFn(st) {
+    const m = (k) => { const o = {}; (st[this._e(k)] || []).forEach((r) => { if (r.mean != null) o[typeof r.start === "number" ? r.start : Date.parse(r.start)] = r.mean; }); return o; };
+    const g = ["grid_power_l1", "grid_power_l2", "grid_power_l3"].map(m), h = ["house_power_l1", "house_power_l2", "house_power_l3"].map(m), pv = m("fronius_power"), b = m("battery_power");
+    const sum = (a, t) => { let x = 0, n = 0; a.forEach((o) => { if (o[t] != null) { x += o[t]; n++; } }); return n ? x / 1000 : null; };
+    return (t) => this._gridShare(sum(g, t), sum(h, t), pv[t] != null ? pv[t] / 1000 : 0, b[t] != null ? b[t] / 1000 : 0);
+  }
+  _mixNow() {
+    const n = (k) => this._num(k, 0) / 1000;
+    const h = n("house_power_l1") + n("house_power_l2") + n("house_power_l3");
+    return this._gridShare(n("grid_power_l1") + n("grid_power_l2") + n("grid_power_l3"), h, n("fronius_power"), n("battery_power"));
+  }
   _sessCostTxt() {
     const c = this._sessCost;
     if (!c || !isFinite(c.cost)) return "";
@@ -542,20 +566,21 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       const S = this._num("zaptec_session"), eid = this._e("zaptec_energy_total"), pid = this._e("tibber_price");
       const zs = this._st("zaptec_status");
       if (S === null || !eid || !pid || !zs || zs.state === "disconnected") { this._sessCost = null; return; }
-      const r = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(Date.now() - 36 * 3600e3).toISOString(), end_time: new Date().toISOString(), statistic_ids: [eid, pid], period: "5minute", types: ["change", "state", "mean"] });
+      const r = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(Date.now() - 36 * 3600e3).toISOString(), end_time: new Date().toISOString(), statistic_ids: [eid, pid].concat(["grid_power_l1", "grid_power_l2", "grid_power_l3", "house_power_l1", "house_power_l2", "house_power_l3", "fronius_power", "battery_power"].map((k) => this._e(k)).filter(Boolean)), period: "5minute", types: ["change", "state", "mean"] });
       const en = (r[eid] || []).filter((x) => x.change != null), pr = {};
       (r[pid] || []).forEach((x) => { if (x.mean != null) pr[x.start] = x.mean; });
+      const mix = this._mixFn(r), nowSh = this._mixNow();
       if (!en.length) return;
       const curE = this._num("zaptec_energy_total"), curP = this._num("tibber_price");
       let lastP = curP != null ? curP : 1;
-      let cost = 0, left = S;
+      let cost = 0, left = S, gridK = 0;
       const tail = curE !== null && en[en.length - 1].state != null ? Math.max(0, curE - en[en.length - 1].state) : 0;
-      const t0 = Math.min(tail, left); cost += t0 * lastP; left -= t0;
+      const t0 = Math.min(tail, left), f0 = nowSh == null ? 1 : nowSh; cost += t0 * f0 * lastP; gridK += t0 * f0; left -= t0;
       for (let i = en.length - 1; i >= 0 && left > 0.001; i--) {
         const p = pr[en[i].start] != null ? pr[en[i].start] : lastP; lastP = p;
-        const e = Math.min(Math.max(0, en[i].change), left); cost += e * p; left -= e;
+        const e = Math.min(Math.max(0, en[i].change), left), sh = mix(typeof en[i].start === "number" ? en[i].start : Date.parse(en[i].start)), f = sh == null ? 1 : sh; cost += e * f * p; gridK += e * f; left -= e;
       }
-      this._sessCost = { cost, avg: S > 0.05 ? cost / S : null, partial: left > 0.3 };
+      this._sessCost = { cost, avg: S > 0.05 ? cost / S : null, gridPct: S > 0.05 ? Math.min(100, Math.round((gridK / (S - Math.max(0, left))) * 100)) : null, partial: left > 0.3 };
     } catch (e) { console.warn("grankulle: session cost failed", e); }
     this._updateControls();
   }
@@ -782,7 +807,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
     const sessK = this._num("zaptec_session");
     const connected = zs && zs.state !== "disconnected";
-    const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" + (this._sessCostTxt() ? " · " + this._sessCostTxt() + " till nätpris" : "") : "");
+    const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" + (this._sessCostTxt() ? " · " + this._sessCostTxt() : "") : "");
     const evTxt = carTxt + (evSoc2 !== null && (!car || car.name === "V60") ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "");
     this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
@@ -1027,7 +1052,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short + " LADDAR" : "LADDBOX");
     const sessTxt = sessKwh !== null ? sessKwh.toFixed(1) + " kWh" : "–";
     const costTxt = this._sessCostTxt();
-    this._set("tag-s3-ev", costTxt && zst !== "disconnected" ? "Kostnad " + costTxt : "");
+    this._set("tag-s3-ev", costTxt && zst !== "disconnected" ? "Kostnad " + costTxt + (this._sessCost && this._sessCost.gridPct != null ? " · " + this._sessCost.gridPct + " % nät" : "") : "");
     if (carNow) {
       this._set("tag-s1-ev", sessTxt + " denna session");
       this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A");
