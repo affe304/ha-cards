@@ -177,6 +177,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="al-other" id="al-other"></div>
         </div>
 
+        <div class="leftcol">
         <div class="panel now">
           <div class="panel-title">Just nu</div>
           <div class="row"><span>☀️ Självförsörjning</span><b id="v-selfsuff">–%</b></div>
@@ -217,6 +218,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row"><span id="v-bc-kwh">–</span><b id="v-bc-cost">–</b></div>
           <div class="row small"><span>Lagrat värde</span><b id="v-bc-val">–</b></div>
           <div class="row small"><span id="v-bc-est">–</span></div>
+        </div>
         </div>
 
         <!-- overlay tags positioned over the photo, matching the reference layout -->
@@ -1196,14 +1198,16 @@ const STYLE = `
   .panel .row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
   .panel .row.small { font-size: 0.7vw; opacity: 0.9; }
   .now, .price, .batt, .energyday { width: 15.5%; min-width: 0; box-sizing: border-box; }
-  .now { left: 2%; top: 10%; }
-  .price { left: 2%; top: 28%; text-align: center; }
+  /* left column: four panels spread evenly from the top to the bottom edge (same bottom margin as wind/sensors on the right) */
+  .leftcol { position: absolute; left: 2%; top: 10%; bottom: 2.5%; width: 15.5%; display: flex; flex-direction: column; justify-content: space-between; z-index: 3; pointer-events: none; }
+  .leftcol .panel { position: static; width: 100%; padding: 1vw 1.2vw; pointer-events: auto; }
+  .price { text-align: center; }
   .price-big { font-size: 1.6vw; font-weight: 700; }
   .price-lvl { font-size: 0.8vw; font-weight: 800; letter-spacing: 0.5px; margin-top: 2px; text-transform: uppercase; }
   .price-sub { font-size: 0.55vw; opacity: 0.7; margin-top: 2px; }
-  .batt { left: 2%; top: 38%; text-align: center; }
+  .batt { text-align: center; }
   .gauge { width: 4.6vw; height: 4.6vw; margin: 4px auto; display: block; }
-  .energyday { left: 2%; top: 62%; width: 14.3%; }
+  .energyday { }
   .energy-cols { display: flex; gap: 16px; }
   .energy-cols .lbl { display: block; font-size: 0.6vw; opacity: 0.7; }
   .energy-cols b { font-size: 0.9vw; }
@@ -1261,7 +1265,7 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
-  .eventlog { left: 18.7%; top: 14.2%; width: 28.5%; max-height: 10.8%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
+  .eventlog { left: 20.5%; top: 14.2%; width: 28.5%; max-height: 10.8%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
   .ev { border-left: 3px solid #888; padding: 0.1vw 0 0.1vw 0.5vw; margin-top: 0.3vw; }
   .ev-red { border-left-color: #ff5a5a; }
   .ev-green { border-left-color: #3ddc84; }
