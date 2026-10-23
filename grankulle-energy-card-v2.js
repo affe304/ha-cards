@@ -164,7 +164,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </div>
         </div>
 
-        <div class="panel eventlog">
+        <div class="panel eventlog" id="evpanel">
           <div class="panel-title">Senaste dygnet · händelser</div>
           <div id="ev-list"><div class="ev-d">Hämtar…</div></div>
         </div>
@@ -980,8 +980,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const phases = this._num("grid_phases");
     const gridLost = (lost && lost.state === "alarm") || (phases !== null && phases === 0 && !!lost);
     const others = this._alarmScan.found;
-    if (!gridLost && !others.length) { box.style.display = "none"; return; }
+    const evp = this.shadowRoot.getElementById("evpanel");
+    if (!gridLost && !others.length) { box.style.display = "none"; if (evp) evp.style.display = ""; return; }
     box.style.display = "";
+    if (evp) evp.style.display = "none";
     const hhmm = (d) => d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
     if (gridLost) {
       this._set("al-title", "⚠ LARM · ELNÄTET ÄR BORTA");
@@ -1259,7 +1261,7 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
-  .eventlog { left: 18.5%; top: 81.5%; width: 44%; max-height: 17.5%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
+  .eventlog { left: 18.7%; top: 14.2%; width: 28.5%; max-height: 10.8%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
   .ev { border-left: 3px solid #888; padding: 0.1vw 0 0.1vw 0.5vw; margin-top: 0.3vw; }
   .ev-red { border-left-color: #ff5a5a; }
   .ev-green { border-left-color: #3ddc84; }
