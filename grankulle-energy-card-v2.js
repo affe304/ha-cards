@@ -164,11 +164,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </div>
         </div>
 
-        <div class="panel eventlog" id="evpanel">
-          <div class="panel-title">Senaste dygnet · händelser</div>
-          <div id="ev-list"><div class="ev-d">Hämtar…</div></div>
-        </div>
-
         <div class="alarmbanner" id="alarm" style="display:none">
           <div class="al-title" id="al-title">⚠ LARM</div>
           <div class="al-time" id="al-time"></div>
@@ -178,7 +173,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <div class="leftcol">
-        <div class="panel now">
+        <div class="panel now" data-action="detail-open" data-tab="hus">
           <div class="panel-title">Just nu</div>
           <div class="row"><span>☀️ Självförsörjning</span><b id="v-selfsuff">–%</b></div>
           <div class="row"><span>🔆 Solproduktion</span><b id="v-solar">– kW</b></div>
@@ -187,14 +182,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row"><span>⚡ Nät</span><b id="v-grid">– kW</b></div>
         </div>
 
-        <div class="panel price">
+        <div class="panel price" data-action="detail-open" data-tab="pris">
           <div class="panel-title">Elpris just nu</div>
           <div class="price-big" id="v-price">– kr/kWh</div>
           <div class="price-lvl" id="v-price-lvl">–</div>
           <div class="price-sub" id="v-price-sub">Tibber Pulse · Grankullevägen</div>
         </div>
 
-        <div class="panel batt">
+        <div class="panel batt" data-action="detail-open" data-tab="batt">
           <div class="panel-title">Husbatteri</div>
           <svg viewBox="0 0 120 120" class="gauge">
             <circle cx="60" cy="60" r="50" fill="none" stroke="#ffffff22" stroke-width="10"/>
@@ -207,7 +202,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="row small" id="row-tbatt"><span>Temperatur</span><b id="v-tbatt">– °C</b></div>
         </div>
 
-        <div class="panel energyday">
+        <div class="panel energyday" data-action="detail-open" data-tab="nat">
           <div class="panel-title">Dygnet</div>
           <div class="row"><span>☀️ Sol</span><b id="v-day-solar">–</b></div>
           <div class="row"><span>⬇️ Köpt</span><b id="v-day-buy">–</b></div>
@@ -222,25 +217,25 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <!-- overlay tags positioned over the photo, matching the reference layout -->
-        <div class="tag" id="tag-solar" style="left:56%; top:28%;">
+        <div class="tag" id="tag-solar" data-action="detail-open" data-tab="sol" style="left:56%; top:28%;">
           <div class="tag-lbl">SOLPRODUKTION</div><div class="tag-val" id="tag-v-solar">– kW</div>
         </div>
-        <div class="tag" id="tag-house" style="left:42%; top:40%;">
+        <div class="tag" id="tag-house" data-action="detail-open" data-tab="hus" style="left:42%; top:40%;">
           <div class="tag-lbl">HUSFÖRBRUKNING</div><div class="tag-val" id="tag-v-house">– kW</div>
         </div>
-        <div class="tag green" id="tag-batt" style="left:39.5%; top:45.5%;">
+        <div class="tag green" id="tag-batt" data-action="detail-open" data-tab="batt" style="left:39.5%; top:45.5%;">
           <div class="tag-lbl">HUSBATTERI</div><div class="tag-val" id="tag-v-batt">–% · – kW</div>
         </div>
-        <div class="tag blue" id="tag-grid" style="left:73%; top:37%;">
+        <div class="tag blue" id="tag-grid" data-action="detail-open" data-tab="nat" style="left:71.5%; top:46%;">
           <div class="tag-lbl">NÄT</div><div class="tag-val" id="tag-v-grid">– kW</div>
         </div>
         <div class="carlamp" id="lamp-v60" style="left:28%; top:61.2%;"></div>
         <div class="carlamp" id="lamp-leaf" style="left:58.1%; top:54.6%;"></div>
-        <div class="tag green" id="tag-ev" data-action="toggle-controls" style="left:53.5%; top:48.5%; cursor:pointer;">
+        <div class="tag green" id="tag-ev" data-action="detail-open" data-tab="bil" style="left:53.5%; top:48.5%; cursor:pointer;">
           <div class="tag-lbl" id="tag-l-ev">LADDBOX</div><div class="tag-val" id="tag-v-ev">– kW</div>
           <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s3-ev" title="Bara den del som kom från nätet × Tibbers timpris. Sol och batteri räknas som gratis. Beräknat i 5-minutersteg utifrån husets effektbalans (nät, sol, batteri) – ej mätt per bil."></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
-        <div class="tag green" id="tag-v60" style="left:31%; top:66%;">
+        <div class="tag green" id="tag-v60" data-action="detail-open" data-tab="bil" style="left:31%; top:66%;">
           <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
         </div>
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
@@ -253,14 +248,21 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-lbl">SLANG</div><div class="tag-val" id="tag-v-hose">–</div>
         </div>
 
+        <div class="topcol">
         <div class="panel pricechart">
-          <div class="pc-head">
+          <div class="pc-head" data-action="detail-open" data-tab="pris" title="Klicka för detaljer" style="cursor:pointer">
             <div class="panel-title" style="margin:0">Elpris framöver · billigt enligt Tibber</div>
           </div>
           <div class="pc-now" id="pc-now">–</div>
           <div class="pc-next" id="pc-next">Hämtar priser…</div>
           <div class="pc-bars" id="pc-bars"></div>
           <div class="pc-tip" id="pc-tip"></div>
+        </div>
+
+        <div class="panel eventlog" id="evpanel">
+          <div class="panel-title">Senaste dygnet · händelser</div>
+          <div id="ev-list"><div class="ev-d">Hämtar…</div></div>
+        </div>
         </div>
 
         <div class="panel wind">
@@ -339,13 +341,24 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
       </div>
+      <div class="detail" id="detail" style="display:none">
+        <div class="d-box">
+          <div class="d-head"><div class="d-tabs" id="d-tabs"></div><div class="d-range" id="d-range"></div><button class="d-close" data-action="detail-close" aria-label="Stäng">✕</button></div>
+          <div class="d-body" id="d-body"></div>
+        </div>
+      </div>
     `;
 
     this.shadowRoot.addEventListener("click", (ev) => {
+      if (ev.target.id === "detail") { this._closeDetail(); return; }
       const t = ev.target.closest("[data-action]");
       if (!t) { return; }
       const a = t.dataset.action;
-      if (a === "toggle-controls") this._toggleControls();
+      if (a === "detail-open") this._openDetail(t.dataset.tab);
+      else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); }
+      else if (a === "detail-range") { this._dRange = t.dataset.range; this._renderDetail(); this._loadDetail(); }
+      else if (a === "detail-close") this._closeDetail();
+      else if (a === "toggle-controls") this._toggleControls();
       else if (a === "zaptec-on") this._zaptec(true);
       else if (a === "zaptec-off") this._zaptec(false);
       else if (a === "toggle-shelly1") this._svc("switch", "toggle", "shelly1");
@@ -358,6 +371,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
+    if (!window.__grankulleEsc) { window.__grankulleEsc = true; document.addEventListener("keydown", (e) => { if (e.key === "Escape" && window.__grankulleCard) window.__grankulleCard._closeDetail(); }); }
+    window.__grankulleCard = this;
     const pcBars = this.shadowRoot.getElementById("pc-bars");
     const pcTip = this.shadowRoot.getElementById("pc-tip");
     const showTip = (ev) => {
@@ -538,6 +553,300 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const ev = this._events || [];
     box.innerHTML = ev.length ? ev.map((e) => '<div class="ev ev-' + e.sev + '"><div class="ev-t">' + e.icon + " " + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="ev-d">Inga händelser det senaste dygnet</div>';
   }
+  // ---------- detail view: click a tile on the photo to open tabs with the data behind it ----------
+  _detailTabs() {
+    return [
+      { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" },
+    ];
+  }
+  _openDetail(tab) {
+    this._dTab = tab || this._dTab || "sol";
+    this._dRange = this._dRange || "24h";
+    const o = this.shadowRoot.getElementById("detail");
+    if (!o) return;
+    o.style.display = "flex";
+    this._renderDetail();
+    this._loadDetail();
+    clearInterval(this._dTimer);
+    this._dTimer = setInterval(() => { this._renderDetail(); }, 15000);
+    clearInterval(this._dLoad);
+    this._dLoad = setInterval(() => this._loadDetail(), 90000);
+  }
+  _closeDetail() {
+    const o = this.shadowRoot.getElementById("detail");
+    if (o) o.style.display = "none";
+    clearInterval(this._dTimer); clearInterval(this._dLoad);
+  }
+  async _loadDetail() {
+    if (!this._hass || !this._hass.callWS) return;
+    const range = this._dRange || "24h";
+    const now = Date.now();
+    const c = this._dCache = this._dCache || {};
+    if (c[range] && now - c[range].at < 60000) { this._dData = c[range].d; this._renderDetail(); return; }
+    try {
+      const span = range === "24h" ? 24 * 3600e3 : 7 * 24 * 3600e3, per = range === "24h" ? "5minute" : "hour";
+      const keys = ["fronius_power", "house_power_l1", "house_power_l2", "house_power_l3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "battery_power", "battery_soc", "zaptec_power", "tibber_price", "dc_charge_energy", "dc_discharge_energy"];
+      const ids = keys.map((k) => this._e(k)).filter(Boolean);
+      const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(now - span).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: ids, period: per, types: ["mean", "change"] });
+      const rows = (k, f, field) => ((st[this._e(k)] || []).map((r) => ({ t: typeof r.start === "number" ? r.start : Date.parse(r.start), v: r[field || "mean"] == null ? null : r[field || "mean"] * (f || 1) })));
+      const sum = (ks, f) => {
+        const m = {};
+        ks.forEach((k) => rows(k, f).forEach((r) => { if (r.v != null) m[r.t] = (m[r.t] || 0) + r.v; }));
+        return Object.keys(m).map(Number).sort((a, b) => a - b).map((t) => ({ t, v: m[t] }));
+      };
+      const house3 = sum(["house_power_l1", "house_power_l2", "house_power_l3"], 0.001);
+      const car = rows("zaptec_power", 0.001).filter((r) => r.v != null);
+      const carM = {}; car.forEach((r) => { carM[r.t] = r.v; });
+      const hus = house3.map((r) => ({ t: r.t, v: Math.max(0, r.v - (carM[r.t] || 0)) }));
+      const d = {
+        range, at: now, dt: per === "5minute" ? 1 / 12 : 1, span,
+        sol: rows("fronius_power", 0.001).filter((r) => r.v != null), hus, car, house: house3,
+        grid: sum(["grid_power_l1", "grid_power_l2", "grid_power_l3"], 0.001),
+        batt: rows("battery_power", 0.001).filter((r) => r.v != null),
+        soc: rows("battery_soc").filter((r) => r.v != null),
+        price: rows("tibber_price").filter((r) => r.v != null),
+        chg: rows("dc_charge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
+        dis: rows("dc_discharge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
+      };
+      c[range] = { at: now, d };
+      this._dData = d;
+    } catch (e) { console.warn("grankulle: detail data failed", e); this._dData = { range, error: true }; }
+    this._renderDetail();
+  }
+  // ----- small helpers for the detail view
+  _kwh(a, dt, f) { return a.reduce((s, r) => s + (f ? f(r.v) : r.v) * dt, 0); }
+  _peak(a) { let b = null; a.forEach((r) => { if (r.v != null && (!b || r.v > b.v)) b = r; }); return b; }
+  _hm(t) { return new Date(t).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); }
+  _dayHm(t) {
+    const d = new Date(t), td = new Date(); td.setHours(0, 0, 0, 0);
+    const dd = new Date(t); dd.setHours(0, 0, 0, 0);
+    const diff = Math.round((dd - td) / 86400e3);
+    return (diff === 0 ? "i dag " : diff === -1 ? "igår " : diff === 1 ? "i morgon " : d.toLocaleDateString("sv-SE", { weekday: "short", day: "numeric" }) + " ") + this._hm(t);
+  }
+  _n(x, d = 1) { return x == null || !isFinite(x) ? "–" : x.toFixed(d); }
+  _tile(label, value, sub, cls) {
+    return '<div class="d-tile' + (cls ? " " + cls : "") + '"><div class="d-tl">' + label + '</div><div class="d-tv">' + value + '</div>' + (sub ? '<div class="d-ts">' + sub + "</div>" : "") + "</div>";
+  }
+  _hrs(h) {
+    if (h == null || !isFinite(h) || h < 0) return "–";
+    const m = Math.round(h * 60);
+    return m >= 60 ? Math.floor(m / 60) + " tim " + (m % 60) + " min" : m + " min";
+  }
+  _niceTicks(lo, hi) {
+    const raw = (hi - lo) / 4 || 1, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p, out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) out.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+    return out;
+  }
+  // series: [{name, color, pts:[{t,v}], area, step, split:[posColor,negColor], dash}], o: {unit, d, min, max, t0, t1, h}
+  _dChart(title, series, o = {}) {
+    const W = 860, H = o.h || 220, L = 46, R = 12, T = 10, B = 24;
+    const span = this._dData && this._dData.span ? this._dData.span : 24 * 3600e3;
+    const t1 = o.t1 || Date.now(), t0 = o.t0 || t1 - span;
+    const pts = [].concat.apply([], series.map((s) => s.pts.filter((p) => p.v != null && p.t >= t0 && p.t <= t1)));
+    if (!pts.length) return '<div class="d-chart-wrap"><div class="d-ct">' + title + '</div><div class="d-empty">Ingen data för perioden</div></div>';
+    let lo = o.min != null ? o.min : Math.min(0, Math.min.apply(null, pts.map((p) => p.v)));
+    let hi = o.max != null ? o.max : Math.max.apply(null, pts.map((p) => p.v));
+    if (hi <= lo) hi = lo + 1;
+    if (o.max == null) hi += (hi - lo) * 0.08;
+    const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R), Y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+    const y0 = Y(Math.min(Math.max(0, lo), hi));
+    const id = "dc" + (this._dN = (this._dN || 0) + 1);
+    let g = "";
+    this._niceTicks(lo, hi).forEach((v) => { g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" class="d-grid"/><text x="' + (L - 6) + '" y="' + (Y(v) + 3).toFixed(1) + '" class="d-ax" text-anchor="end">' + (o.axfmt ? o.axfmt(v) : (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1).replace(/\.0$/, ""))) + "</text>"; });
+    const span2 = t1 - t0, stepH = span2 <= 30 * 3600e3 ? 3 : span2 <= 60 * 3600e3 ? 6 : 24;
+    const dd = new Date(t0); dd.setMinutes(0, 0, 0);
+    while (dd.getTime() < t0 || dd.getHours() % stepH !== 0) dd.setHours(dd.getHours() + 1);
+    for (let t = dd.getTime(); t <= t1; dd.setHours(dd.getHours() + stepH), t = dd.getTime()) {
+      const lab = stepH < 24 ? String(new Date(t).getHours()).padStart(2, "0") : new Date(t).toLocaleDateString("sv-SE", { weekday: "short", day: "numeric" });
+      g += '<line x1="' + X(t).toFixed(1) + '" x2="' + X(t).toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" class="d-grid v"/><text x="' + X(t).toFixed(1) + '" y="' + (H - 7) + '" class="d-ax" text-anchor="middle">' + lab + "</text>";
+    }
+    if (o.t1 && o.t1 > Date.now()) { const xn = X(Date.now()).toFixed(1); g += '<line x1="' + xn + '" x2="' + xn + '" y1="' + T + '" y2="' + (H - B) + '" class="d-now"/>'; }
+    let body = "", defs = "";
+    series.forEach((s, i) => {
+      const a = s.pts.filter((p) => p.v != null && p.t >= t0 && p.t <= t1);
+      if (!a.length) return;
+      let dpath = "";
+      a.forEach((p, j) => { const x = X(p.t).toFixed(1), y = Y(p.v).toFixed(1); dpath += j === 0 ? "M" + x + " " + y : s.step ? "H" + x + "V" + y : "L" + x + " " + y; });
+      const area = dpath + (s.step ? "H" + X(a[a.length - 1].t + 3600e3).toFixed(1) : "") + "L" + X(a[a.length - 1].t).toFixed(1) + " " + y0.toFixed(1) + "L" + X(a[0].t).toFixed(1) + " " + y0.toFixed(1) + "Z";
+      if (s.split) {
+        defs += '<clipPath id="' + id + "p" + i + '"><rect x="0" y="0" width="' + W + '" height="' + y0.toFixed(1) + '"/></clipPath><clipPath id="' + id + "n" + i + '"><rect x="0" y="' + y0.toFixed(1) + '" width="' + W + '" height="' + H + '"/></clipPath>';
+        body += '<path d="' + area + '" fill="' + s.split[0] + '" fill-opacity="0.35" clip-path="url(#' + id + "p" + i + ')"/><path d="' + area + '" fill="' + s.split[1] + '" fill-opacity="0.35" clip-path="url(#' + id + "n" + i + ')"/>';
+        body += '<path d="' + dpath + '" fill="none" stroke="' + s.split[0] + '" stroke-width="1.6" clip-path="url(#' + id + "p" + i + ')"/><path d="' + dpath + '" fill="none" stroke="' + s.split[1] + '" stroke-width="1.6" clip-path="url(#' + id + "n" + i + ')"/>';
+      } else {
+        if (s.area) body += '<path d="' + area + '" fill="' + s.color + '" fill-opacity="0.28"/>';
+        body += '<path d="' + dpath + '" fill="none" stroke="' + s.color + '" stroke-width="1.8"' + (s.dash ? ' stroke-dasharray="5 4"' : "") + "/>";
+      }
+    });
+    this._dCharts = this._dCharts || {};
+    this._dCharts[id] = { series, t0, t1, lo, hi, W, H, L, R, T, B, o };
+    const lg = series.map((s) => s.legend ? s.legend.map((l) => '<span><i style="background:' + l[0] + '"></i>' + l[1] + "</span>").join("") : s.name ? '<span><i style="background:' + s.color + '"></i>' + s.name + "</span>" : "").join("");
+    const legend = lg ? '<div class="d-leg">' + lg + "</div>" : "";
+    return '<div class="d-chart-wrap"><div class="d-ct">' + title + legend + '</div><div class="d-chart" data-chart="' + id + '"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none"><defs>' + defs + "</defs>" + g + body + '<line class="d-guide" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" style="display:none"/></svg><div class="d-tip"></div></div></div>';
+  }
+  _wireCharts() {
+    this.shadowRoot.querySelectorAll(".d-chart").forEach((el) => {
+      const c = this._dCharts && this._dCharts[el.dataset.chart];
+      if (!c) return;
+      const svg = el.querySelector("svg"), guide = el.querySelector(".d-guide"), tip = el.querySelector(".d-tip");
+      const move = (ev) => {
+        const r = svg.getBoundingClientRect();
+        const fx = (ev.clientX - r.left) / r.width, vx = fx * c.W;
+        if (vx < c.L || vx > c.W - c.R) { guide.style.display = "none"; tip.style.display = "none"; return; }
+        const t = c.t0 + ((vx - c.L) / (c.W - c.L - c.R)) * (c.t1 - c.t0);
+        const lines = [];
+        c.series.forEach((s) => {
+          let best = null;
+          s.pts.forEach((p) => { if (p.v != null && (!best || Math.abs(p.t - t) < Math.abs(best.t - t))) best = p; });
+          if (best && Math.abs(best.t - t) < (c.t1 - c.t0) / 20) lines.push((s.name ? s.name + ": " : "") + (c.o.d != null ? best.v.toFixed(c.o.d) : best.v.toFixed(2)) + " " + (c.o.unit || ""));
+        });
+        guide.setAttribute("x1", vx); guide.setAttribute("x2", vx); guide.style.display = "";
+        tip.innerHTML = "<b>" + this._dayHm(t) + "</b><br>" + (lines.join("<br>") || "–");
+        tip.style.display = "block";
+        const w = tip.offsetWidth, px = fx * r.width;
+        tip.style.left = Math.min(Math.max(px - w / 2, 0), r.width - w) + "px";
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerdown", move);
+      el.addEventListener("pointerleave", () => { guide.style.display = "none"; tip.style.display = "none"; });
+    });
+  }
+  _renderDetail() {
+    const root = this.shadowRoot, body = root.getElementById("d-body");
+    if (!body || root.getElementById("detail").style.display === "none") return;
+    root.getElementById("d-tabs").innerHTML = this._detailTabs().map((t) => '<button class="d-tab' + (t.k === this._dTab ? " on" : "") + '" data-action="detail-tab" data-tab="' + t.k + '">' + t.t + "</button>").join("");
+    root.getElementById("d-range").innerHTML = [["24h", "24 tim"], ["7d", "7 dygn"]].map((r) => '<button class="d-rb' + (r[0] === this._dRange ? " on" : "") + '" data-action="detail-range" data-range="' + r[0] + '">' + r[1] + "</button>").join("");
+    const d = this._dData;
+    if (!d || d.range !== this._dRange) { body.innerHTML = '<div class="d-empty">Hämtar data…</div>'; return; }
+    if (d.error) { body.innerHTML = '<div class="d-empty">Kunde inte hämta historik från Home Assistant.</div>'; return; }
+    const fn = this["_dTab_" + this._dTab];
+    if (!fn) return;
+    const scroll = body.scrollTop;
+    this._dCharts = {};
+    let out;
+    try { out = fn.call(this, d); } catch (e) { console.warn("grankulle: detail render failed", e); out = { tiles: [], charts: ['<div class="d-empty">Kunde inte visa detaljerna.</div>'] }; }
+    body.innerHTML = '<div class="d-tiles">' + out.tiles.join("") + "</div>" + out.charts.join("") + (out.extra || "");
+    this._wireCharts();
+    body.scrollTop = scroll;
+  }
+  _rng() { return this._dRange === "24h" ? "senaste dygnet" : "senaste 7 dygnen"; }
+  _dTab_sol(d) {
+    const now = this._num("fronius_power", 0) / 1000, pk = this._peak(d.sol), tot = this._kwh(d.sol, d.dt);
+    const ys = this._st("solar_yield_total");
+    return {
+      tiles: [
+        this._tile("Just nu", this._n(now, 2) + " kW", now > 0.05 ? "producerar" : "ingen produktion"),
+        this._tile("Idag", this._n(this._solarToday, 1) + " kWh", "sedan midnatt"),
+        this._tile("Topp " + this._rng(), pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : ""),
+        this._tile("Totalt " + this._rng(), this._n(tot, 1) + " kWh", this._dRange === "7d" ? "snitt " + this._n(tot / 7, 1) + " kWh/dygn" : ""),
+        this._tile("Sedan start", ys ? this._n(parseFloat(ys.state), 0) + " " + (ys.attributes.unit_of_measurement || "") : "–", "Fronius totalt"),
+      ],
+      charts: [this._dChart("Solproduktion", [{ color: "#ffc83d", pts: d.sol, area: true }], { unit: "kW", d: 2 })],
+    };
+  }
+  _dTab_hus(d) {
+    const raw = ((this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))) / 1000, car = (this._num("zaptec_power", 0)) / 1000;
+    const now = Math.max(0, raw - car), pk = this._peak(d.hus), tot = this._kwh(d.hus, d.dt), tcar = this._kwh(d.car, d.dt);
+    const avg = d.hus.length ? d.hus.reduce((a, r) => a + r.v, 0) / d.hus.length : null;
+    return {
+      tiles: [
+        this._tile("Just nu", this._n(now, 2) + " kW", "utan billaddning"),
+        this._tile("Snitt " + this._rng(), this._n(avg, 2) + " kW"),
+        this._tile("Topp", pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : ""),
+        this._tile("Förbrukat " + this._rng(), this._n(tot, 1) + " kWh", "hus utan bil"),
+        this._tile("Billaddning " + this._rng(), this._n(tcar, 1) + " kWh", tot + tcar > 0 ? Math.round((tcar / (tot + tcar)) * 100) + " % av all förbrukning" : ""),
+        this._tile("Självförsörjning nu", (this.shadowRoot.getElementById("v-selfsuff") || {}).textContent || "–"),
+      ],
+      charts: [this._dChart("Husförbrukning (utan bil)", [{ name: "Hus", color: "#5ab0ff", pts: d.hus, area: true }, { name: "Bil", color: "#3ddc84", pts: d.car }], { unit: "kW", d: 2 })],
+    };
+  }
+  _dTab_batt(d) {
+    const soc = this._num("battery_soc"), p = (this._num("battery_power", 0)) / 1000, cap = (this._battCost && this._battCost.cap) || 19;
+    let est = "–", estSub = "";
+    if (soc != null && p < -0.05) { est = this._hrs(((soc / 100) * cap) / -p); estSub = "tills 0 % vid nuvarande uttag"; }
+    else if (soc != null && p > 0.05) { est = this._hrs((((100 - soc) / 100) * cap) / p); estSub = "tills 100 %"; }
+    const bc = this._battCost;
+    return {
+      tiles: [
+        this._tile("Laddning", this._n(soc, 0) + " %", "≈ " + this._n((soc || 0) / 100 * cap, 1) + " av " + this._n(cap, 0) + " kWh"),
+        this._tile("Effekt nu", this._n(Math.abs(p), 2) + " kW", p > 0.05 ? "laddar" : p < -0.05 ? "urladdar" : "vilar"),
+        this._tile(p < -0.05 ? "Tid kvar" : "Tid till full", est, estSub),
+        this._tile("Laddat " + this._rng(), this._n(d.chg, 1) + " kWh"),
+        this._tile("Urladdat " + this._rng(), this._n(d.dis, 1) + " kWh"),
+        this._tile("Spänning / ström", this._n(this._num("battery_voltage"), 1) + " V · " + this._n(this._num("battery_current"), 1) + " A"),
+        this._tile("Energins kostnad", bc ? "0–" + this._n(bc.cMax, 2) + " kr/kWh" : "–", bc ? "beräknad (ej mätt): ≈ " + this._n(bc.c, 2) + " kr/kWh" : ""),
+      ],
+      charts: [
+        this._dChart("Laddningsnivå", [{ color: "#4dd0e1", pts: d.soc, area: true }], { unit: "%", d: 0, min: 0, max: 100 }),
+        this._dChart("Batterieffekt", [{ legend: [["#3ddc84", "Laddar"], ["#ff9f43", "Urladdar"]], color: "#3ddc84", split: ["#3ddc84", "#ff9f43"], pts: d.batt }], { unit: "kW", d: 2, h: 190 }),
+      ],
+    };
+  }
+  _dTab_nat(d) {
+    const now = ((this._num("grid_power_l1", 0)) + (this._num("grid_power_l2", 0)) + (this._num("grid_power_l3", 0))) / 1000;
+    const buy = this._kwh(d.grid, d.dt, (v) => Math.max(0, v)), sell = this._kwh(d.grid, d.dt, (v) => Math.max(0, -v));
+    const imp = this._peak(d.grid), exp = this._peak(d.grid.map((r) => ({ t: r.t, v: -r.v })));
+    const ph = [1, 2, 3].map((i) => this._n((this._num("grid_power_l" + i, 0)), 0)).join(" / ");
+    const tb = this._num("tibber_consumption"), ts = this._num("tibber_production"), tc = this._num("tibber_cost"), tr = this._num("tibber_reward");
+    return {
+      tiles: [
+        this._tile("Just nu", this._n(Math.abs(now), 2) + " kW", now > 0.05 ? "köper från nätet" : now < -0.05 ? "säljer till nätet" : "balans"),
+        this._tile("Köpt " + this._rng(), this._n(buy, 1) + " kWh"),
+        this._tile("Sålt " + this._rng(), this._n(sell, 1) + " kWh"),
+        this._tile("Högsta köp", imp && imp.v > 0 ? this._n(imp.v, 2) + " kW" : "–", imp && imp.v > 0 ? this._dayHm(imp.t) : ""),
+        this._tile("Högsta sälj", exp && exp.v > 0 ? this._n(exp.v, 2) + " kW" : "–", exp && exp.v > 0 ? this._dayHm(exp.t) : ""),
+        this._tile("Fasbelastning L1 / L2 / L3", ph + " W"),
+        this._tile("Idag köpt", this._n(tb, 1) + " kWh", tc != null ? "kostnad " + this._n(tc, 0) + " kr" : ""),
+        this._tile("Idag sålt", this._n(ts, 1) + " kWh", tr != null ? "ersättning " + this._n(tr, 0) + " kr" : ""),
+      ],
+      charts: [this._dChart("Nätets effekt (över 0 = köper, under 0 = säljer)", [{ legend: [["#ff7a59", "Köper"], ["#3ddc84", "Säljer"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], pts: d.grid }], { unit: "kW", d: 2 })],
+    };
+  }
+  _dTab_bil(d) {
+    const car = this._whichCar(), zs = this._st("zaptec_status"), p = (this._num("zaptec_power", 0)) / 1000;
+    const stTxt = { disconnected: "Ingen bil ansluten", connected_requesting: "Ansluten · väntar på start", connected_charging: "Laddar", connected_finished: "Laddning klar" }[zs ? zs.state : ""] || (zs ? zs.state : "–");
+    const sess = this._num("zaptec_session"), sc = this._sessCost;
+    const tot = this._kwh(d.car, d.dt), pk = this._peak(d.car);
+    const cur = [1, 2, 3].map((i) => this._n(this._num("zaptec_i" + i, 0), 0)).join(" / ");
+    const soc = this._num("ev_soc"), tgt = this._num("ev_soc_target");
+    const evs = (this._events || []).filter((e) => e.icon === "🔌");
+    return {
+      tiles: [
+        this._tile("Status", stTxt, car ? car.name + " · " + car.phases + (car.phases > 1 ? " faser" : " fas") : ""),
+        this._tile("Effekt nu", this._n(p, 2) + " kW", "ström L1/L2/L3: " + cur + " A"),
+        this._tile("Denna session", sess != null ? this._n(sess, 1) + " kWh" : "–", sc && isFinite(sc.cost) ? "kostnad ≈ " + this._n(sc.cost, 1) + " kr · " + (sc.gridPct != null ? sc.gridPct + " % från nätet" : "") : ""),
+        this._tile("V60 laddning", soc != null ? this._n(soc, 0) + (tgt != null ? " → " + this._n(tgt, 0) : "") + " %" : "–"),
+        this._tile("Laddat " + this._rng(), this._n(tot, 1) + " kWh", pk ? "högst " + this._n(pk.v, 2) + " kW" : ""),
+      ],
+      charts: [this._dChart("Laddeffekt", [{ color: "#3ddc84", pts: d.car, area: true }], { unit: "kW", d: 2, h: 190 })],
+      extra: '<div class="d-ct">Laddningar senaste dygnet <span class="d-note">kostnad = nätandel × Tibber-pris, sol och batteri räknas som gratis</span></div>' + (evs.length ? evs.map((e) => '<div class="ev ev-green"><div class="ev-t">' + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="d-empty">Inga laddningar senaste dygnet</div>'),
+    };
+  }
+  _dTab_pris(d) {
+    const now = this._num("tibber_price"), H = this._hourly || [], t = Date.now();
+    const hourStart = Math.floor(t / 3600e3) * 3600e3;
+    const fut = H.filter((r) => r.t >= hourStart).map((r) => ({ t: r.t, v: r.price }));
+    const past = d.price.filter((r) => r.t < hourStart);
+    const all = past.map((r) => r.v).concat(fut.map((r) => r.v));
+    const avg = past.length ? past.reduce((a, r) => a + r.v, 0) / past.length : null;
+    let lo = null, hi = null;
+    past.concat(fut).forEach((r) => { if (!lo || r.v < lo.v) lo = r; if (!hi || r.v > hi.v) hi = r; });
+    let best = null;
+    for (let i = 0; i + 2 < fut.length; i++) { const a = (fut[i].v + fut[i + 1].v + fut[i + 2].v) / 3; if (!best || a < best.a) best = { a, t: fut[i].t }; }
+    const t1 = fut.length ? fut[fut.length - 1].t + 3600e3 : t;
+    return {
+      tiles: [
+        this._tile("Just nu", this._n(now, 2) + " kr/kWh", (this.shadowRoot.getElementById("v-price-lvl") || {}).textContent || ""),
+        this._tile("Snitt " + this._rng(), this._n(avg, 2) + " kr/kWh", now != null && avg ? Math.round((now / avg) * 100) + " % av snittet nu" : ""),
+        this._tile("Billigast", lo ? this._n(lo.v, 2) + " kr/kWh" : "–", lo ? this._dayHm(lo.t) : ""),
+        this._tile("Dyrast", hi ? this._n(hi.v, 2) + " kr/kWh" : "–", hi ? this._dayHm(hi.t) : ""),
+        this._tile("Billigaste 3 timmarna framåt", best ? this._n(best.a, 2) + " kr/kWh" : "–", best ? "börjar " + this._dayHm(best.t) : "väntar på morgondagens priser"),
+      ],
+      charts: [this._dChart("Elpris per timme (streckat = kommande)", [{ name: "Historik", color: "#f2c94c", step: true, area: true, pts: past }, { name: "Kommande", color: "#ffe28a", step: true, dash: true, pts: fut }], { unit: "kr/kWh", d: 2, t1: t1 > t ? t1 : t, t0: t - this._dData.span })],
+    };
+  }
+
   // Share (0..1) of the house load -- and thus of the car -- that was bought from the grid right now.
   // Inputs in kW: g = grid import (+), h = house incl. car, pv = solar, b = battery charge (+).
   // Solar surplus is assumed to charge the battery first, so only the rest of the battery charging is grid energy.
@@ -1157,6 +1466,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 const STYLE = `
   :host { display: block; }
   .photo-card {
+    container-type: inline-size;
     position: relative;
     width: 100%;
     aspect-ratio: 1412 / 1114;
@@ -1213,7 +1523,10 @@ const STYLE = `
   .energy-cols b { font-size: 0.9vw; }
 
 
-  .pricechart { left: 20.5%; top: 1.5%; width: 49.5%; box-sizing: border-box; padding: 0.7% 1%; }
+  /* price chart with the event list directly underneath, so they can never overlap whatever the width */
+  .topcol { position: absolute; left: 0; top: 1.5%; width: 100%; display: flex; flex-direction: column; gap: 0.9vw; pointer-events: none; z-index: 4; }
+  .topcol .panel { position: relative; margin-left: 20.5%; pointer-events: auto; }
+  .pricechart { width: 49.5%; box-sizing: border-box; padding: 0.7% 1%; }
   .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2vw; }
   .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
   .pc-share .cbtn { min-height: 0; padding: 0 0.45vw; font-size: 0.7vw; }
@@ -1265,13 +1578,13 @@ const STYLE = `
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
   .tag-val { font-weight: 700; font-size: 0.85vw; margin-top: 1px; }
-  .eventlog { left: 20.5%; top: 14.2%; width: 28.5%; max-height: 10.8%; overflow-y: auto; box-sizing: border-box; z-index: 4; }
+  .eventlog { width: 28.5%; max-height: 8.6cqw; overflow-y: auto; box-sizing: border-box; }
   .ev { border-left: 3px solid #888; padding: 0.1vw 0 0.1vw 0.5vw; margin-top: 0.3vw; }
   .ev-red { border-left-color: #ff5a5a; }
   .ev-green { border-left-color: #3ddc84; }
   .ev-t { font-size: 0.75vw; font-weight: 700; }
   .ev-d { font-size: 0.62vw; opacity: 0.85; }
-  @media (max-width: 900px) { .eventlog { position: static; width: auto; max-height: none; margin: 8px; } .ev-t { font-size: 13px; } .ev-d { font-size: 11px; } }
+  @media (max-width: 900px) { .topcol { position: static; } .topcol .panel { margin: 8px; } .eventlog { width: auto; max-height: none; } .ev-t { font-size: 13px; } .ev-d { font-size: 11px; } }
   .alarmbanner {
     position: absolute; left: 50%; top: 14%; transform: translateX(-50%); width: 40%; z-index: 20; box-sizing: border-box;
     background: rgba(110, 8, 8, 0.93); border: 2px solid #ff4d4d; border-radius: 12px; padding: 0.7vw 1vw; color: #fff;
@@ -1349,6 +1662,42 @@ const STYLE = `
     .panel, .tag { font-size: 11px; }
     .h1 { font-size: 16px; } .sub { font-size: 9px; }
   }
+  /* ---- detail view ---- */
+  .tag[data-action="detail-open"], .panel[data-action="detail-open"] { cursor: pointer; }
+  .tag[data-action="detail-open"]:hover, .panel[data-action="detail-open"]:hover { outline: 1px solid rgba(255,255,255,0.45); }
+  .detail { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,0.62); backdrop-filter: blur(3px); align-items: center; justify-content: center; padding: 2vh 2vw; box-sizing: border-box; }
+  .d-box { width: min(1100px, 100%); max-height: 94vh; display: flex; flex-direction: column; background: rgba(14,20,19,0.97); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; box-shadow: 0 10px 50px rgba(0,0,0,0.6); overflow: hidden; }
+  .d-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.12); flex-wrap: wrap; }
+  .d-tabs { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+  .d-tab, .d-rb, .d-close { background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 7px 12px; font-size: 14px; cursor: pointer; font-family: inherit; }
+  .d-tab.on, .d-rb.on { background: #2e7d5b; border-color: #3ddc84; font-weight: 700; }
+  .d-range { display: flex; gap: 4px; }
+  .d-rb { padding: 6px 10px; font-size: 13px; }
+  .d-close { padding: 6px 11px; }
+  .d-body { padding: 14px; overflow-y: auto; min-height: 60vh; }
+  .d-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .d-tile { background: rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 12px; }
+  .d-tl { font-size: 12px; opacity: 0.7; }
+  .d-tv { font-size: 21px; font-weight: 800; margin-top: 2px; }
+  .d-ts { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+  .d-ct { font-size: 13px; font-weight: 700; margin: 10px 0 4px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .d-note { font-weight: 400; opacity: 0.6; font-size: 11px; }
+  .d-leg { display: flex; gap: 12px; font-weight: 400; font-size: 12px; opacity: 0.9; }
+  .d-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+  .d-chart { position: relative; touch-action: pan-y; }
+  .d-chart svg { width: 100%; height: auto; display: block; }
+  .d-grid { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
+  .d-grid.v { stroke: rgba(255,255,255,0.07); }
+  .d-ax { fill: rgba(255,255,255,0.65); font-size: 11px; }
+  .d-now { stroke: #fff; stroke-opacity: 0.55; stroke-dasharray: 4 3; }
+  .d-guide { stroke: #fff; stroke-opacity: 0.6; stroke-width: 1; }
+  .d-tip { display: none; position: absolute; top: 4px; background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; padding: 5px 8px; font-size: 12px; pointer-events: none; white-space: nowrap; z-index: 2; }
+  .d-empty { padding: 18px; opacity: 0.7; text-align: center; }
+  .d-body .ev { border-left: 3px solid #3ddc84; padding: 2px 0 2px 8px; margin-top: 6px; }
+  .d-body .ev-t { font-size: 14px; font-weight: 700; }
+  .d-body .ev-d { font-size: 12px; opacity: 0.85; }
+  @media (max-width: 700px) { .d-tv { font-size: 18px; } .d-tab { padding: 6px 9px; font-size: 13px; } }
+
 `;
 
 customElements.define("grankulle-energy-card-v2", GrankulleEnergyCardV2);
