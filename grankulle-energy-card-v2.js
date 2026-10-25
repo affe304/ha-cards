@@ -1157,12 +1157,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   // Grid "balance": measured over 24 h, a balanced house sits at ~+0.10 kW with ±0.09 kW noise
   // (10-min mean 0.07-0.11 kW). Instant values flip sign ~10x per 10 min, so use a 3-min mean and a band of 0.10 ± 0.15 kW.
   _gridWords(grid, long) {
-    const CENTER = 0.10, HALF = 0.15, WIN = 180000;
+    // short average (10 s) only to stop the word flickering around zero; a long window made the tile lag minutes behind
+    const CENTER = 0.10, HALF = 0.15, WIN = 10000;
     const now = Date.now();
     const b = this._gbuf = this._gbuf || [];
-    if (!b.length || now - b[b.length - 1].t >= 3000) b.push({ t: now, v: grid });
+    if (!b.length || now - b[b.length - 1].t >= 2000) b.push({ t: now, v: grid });
     while (b.length && now - b[0].t > WIN) b.shift();
-    const avg = b.length > 1 && now - b[0].t >= 15000 ? b.reduce((a, x) => a + x.v, 0) / b.length : grid;
+    const avg = b.length > 1 ? b.reduce((a, x) => a + x.v, 0) / b.length : grid;
     if (Math.abs(avg - CENTER) <= HALF) {
       const live = (grid >= 0 ? "+" : "−") + Math.abs(grid).toFixed(2) + " kW";
       return long ? "Balans · live " + live : "Balans · " + live;
