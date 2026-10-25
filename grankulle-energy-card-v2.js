@@ -73,6 +73,8 @@ const DEFAULT_ENTITIES = {
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
+  vma_count: "sensor.vma_halland",
+  vma_headline: "sensor.vma_halland_rubrik",
   ev_1fas_mode: "input_select.ev_1fas_mode",
   ev_1fas_status: "binary_sensor.ev_laddning_tillaten_1_fas",
   sun: "sun.sun",
@@ -164,14 +166,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           </div>
         </div>
 
-        <div class="alarmbanner" id="alarm" style="display:none">
-          <div class="al-title" id="al-title">⚠ LARM</div>
-          <div class="al-time" id="al-time"></div>
-          <div class="al-sub" id="al-sub"></div>
-          <div class="al-adv" id="al-adv"></div>
-          <div class="al-other" id="al-other"></div>
-        </div>
-
         <div class="leftcol">
         <div class="panel now" data-action="detail-open" data-tab="hus">
           <div class="panel-title">Just nu</div>
@@ -249,6 +243,17 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
 
         <div class="topcol">
+        <div class="panel warnbanner" id="warnbox" style="display:none">
+          <div class="wb-title" id="wb-title"></div>
+          <div id="wb-list"></div>
+        </div>
+        <div class="alarmbanner" id="alarm" style="display:none">
+          <div class="al-title" id="al-title">⚠ LARM</div>
+          <div class="al-time" id="al-time"></div>
+          <div class="al-sub" id="al-sub"></div>
+          <div class="al-adv" id="al-adv"></div>
+          <div class="al-other" id="al-other"></div>
+        </div>
         <div class="panel pricechart">
           <div class="pc-head" data-action="detail-open" data-tab="pris" title="Klicka för detaljer" style="cursor:pointer">
             <div class="panel-title" style="margin:0">Elpris framöver · billigt enligt Tibber</div>
@@ -399,6 +404,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     setInterval(() => this._fetchDay(), 10 * 60000);
     setTimeout(() => this._fetchSession(), 3000);
     setInterval(() => this._fetchSession(), 2 * 60000);
+    setTimeout(() => this._fetchWarnings(), 2500);
+    setInterval(() => this._fetchWarnings(), 10 * 60000);
+    setInterval(() => this._renderWarnings(), 30000);
     setTimeout(() => this._fetchEvents(), 4000);
     setInterval(() => this._fetchEvents(), 5 * 60000);
     setInterval(() => this._renderPrices(), 30000);
@@ -465,6 +473,49 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._renderDay();
   }
   // Session / event charging cost = grid share of each 5-min bucket x Tibber price (solar and battery energy counted as free).
+  // ---------- weather warnings (SMHI open data) + VMA (via optional HA sensors) ----------
+  async _fetchWarnings() {
+    try {
+      const r = await fetch("https://opendata-download-warnings.smhi.se/ibww/api/version/1/warning.json");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const rank = { RED: 4, ORANGE: 3, YELLOW: 2, MESSAGE: 1 };
+      const out = [];
+      j.forEach((ev) => (ev.warningAreas || []).forEach((a) => {
+        const aff = (a.affectedAreas || []).map((x) => x.sv || "").join("|");
+        const name = (a.areaName && a.areaName.sv) || "";
+        // Onsala: Hallands län, Hallandskusten and Kattegatt
+        if (!/Hallands län|Hallandskusten|Kattegatt/i.test(aff + "|" + name)) return;
+        const lvl = (a.warningLevel && a.warningLevel.code) || "MESSAGE";
+        const desc = (a.descriptions || []).map((d) => ((d.title && d.title.sv) || "") + ": " + ((d.text && d.text.sv) || "")).join("\n");
+        out.push({ id: ev.id + "-" + a.id, lvl, rank: rank[lvl] || 0, event: (a.eventDescription && a.eventDescription.sv) || (ev.event && ev.event.sv) || "Varning", area: name.replace(/\.$/, ""), start: Date.parse(a.approximateStart), end: a.approximateEnd ? Date.parse(a.approximateEnd) : null, desc });
+      }));
+      out.sort((a, b) => b.rank - a.rank || a.start - b.start);
+      this._warns = out;
+    } catch (e) { console.warn("grankulle: SMHI warnings failed", e); }
+    this._renderWarnings();
+  }
+  _renderWarnings() {
+    const box = this.shadowRoot.getElementById("warnbox");
+    if (!box) return;
+    const now = Date.now();
+    const list = (this._warns || []).filter((w) => !w.end || w.end > now);
+    const vc = this._num("vma_count", 0), vh = this._st("vma_headline");
+    const vma = vc > 0 ? (vh && vh.state && vh.state !== "unknown" && vh.state !== "unavailable" ? vh.state : "Viktigt meddelande till allmänheten (VMA) är utfärdat") : null;
+    if (!list.length && !vma) { box.style.display = "none"; return; }
+    const lvlName = { RED: "Röd varning", ORANGE: "Orange varning", YELLOW: "Gul varning", MESSAGE: "Meddelande" };
+    const top = vma ? "RED" : list[0].lvl;
+    box.className = "panel warnbanner lv-" + top.toLowerCase();
+    box.style.display = "";
+    this._set("wb-title", (vma ? "🚨 VMA · " : "⚠ ") + (vma ? "Viktigt meddelande" : lvlName[top] + (list.length > 1 ? " · " + list.length + " st" : "")) + " · Onsala/Halland");
+    const t = (w) => {
+      if (w.start > now) return "från " + this._dayHm(w.start) + (w.end ? " till " + this._dayHm(w.end) : "");
+      return w.end ? "till " + this._dayHm(w.end) : "pågår";
+    };
+    const dot = { RED: "🟥", ORANGE: "🟧", YELLOW: "🟨", MESSAGE: "🟦" };
+    const esc = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    this.shadowRoot.getElementById("wb-list").innerHTML = (vma ? '<div class="wb-row"><span class="wb-vma">' + esc(vma) + "</span></div>" : "") + list.map((w) => '<div class="wb-row" title="' + esc(w.desc) + '"><span>' + dot[w.lvl] + "</span><b>" + esc(w.event) + "</b><span>" + esc(w.area) + '</span><span class="wb-t">' + t(w) + "</span></div>").join("");
+  }
   // ---------- event list: what happened in the last 24 h ----------
   async _fetchEvents() {
     if (!this._hass || !this._hass.callWS) return;
@@ -1526,6 +1577,16 @@ const STYLE = `
   /* price chart with the event list directly underneath, so they can never overlap whatever the width */
   .topcol { position: absolute; left: 0; top: 1.5%; width: 100%; display: flex; flex-direction: column; gap: 0.9vw; pointer-events: none; z-index: 4; }
   .topcol .panel { position: relative; margin-left: 20.5%; pointer-events: auto; }
+  .topcol .alarmbanner { position: relative; left: auto; top: auto; transform: none; margin-left: 20.5%; width: 49.5%; }
+  .warnbanner { width: 49.5%; box-sizing: border-box; padding: 0.6vw 1vw; border: 2px solid #f2c94c; background: rgba(40, 32, 6, 0.92); }
+  .warnbanner.lv-orange { border-color: #ff9f43; background: rgba(54, 30, 6, 0.93); }
+  .warnbanner.lv-red { border-color: #ff4d4d; background: rgba(90, 8, 8, 0.94); animation: alarmpulse 1.4s ease-in-out infinite; }
+  .warnbanner.lv-message { border-color: #6aa7ff; background: rgba(10, 26, 48, 0.92); }
+  .wb-title { font-size: 0.8vw; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.25vw; }
+  .wb-row { font-size: 0.8vw; margin-top: 0.2vw; display: flex; gap: 0.5vw; align-items: baseline; }
+  .wb-row b { font-weight: 800; }
+  .wb-row .wb-t { opacity: 0.8; font-size: 0.7vw; margin-left: auto; white-space: nowrap; }
+  .wb-vma { font-weight: 800; color: #ffb3b3; }
   .pricechart { width: 49.5%; box-sizing: border-box; padding: 0.7% 1%; }
   .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2vw; }
   .pc-share { display: flex; align-items: center; gap: 0.3vw; font-size: 0.6vw; }
@@ -1584,7 +1645,7 @@ const STYLE = `
   .ev-green { border-left-color: #3ddc84; }
   .ev-t { font-size: 0.75vw; font-weight: 700; }
   .ev-d { font-size: 0.62vw; opacity: 0.85; }
-  @media (max-width: 900px) { .topcol { position: static; } .topcol .panel { margin: 8px; } .eventlog { width: auto; max-height: none; } .ev-t { font-size: 13px; } .ev-d { font-size: 11px; } }
+  @media (max-width: 900px) { .topcol { position: static; } .topcol .panel, .topcol .alarmbanner { margin: 8px; width: auto; } .wb-row, .wb-title { font-size: 13px; } .eventlog { width: auto; max-height: none; } .ev-t { font-size: 13px; } .ev-d { font-size: 11px; } }
   .alarmbanner {
     position: absolute; left: 50%; top: 14%; transform: translateX(-50%); width: 40%; z-index: 20; box-sizing: border-box;
     background: rgba(110, 8, 8, 0.93); border: 2px solid #ff4d4d; border-radius: 12px; padding: 0.7vw 1vw; color: #fff;
