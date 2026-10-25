@@ -73,6 +73,7 @@ const DEFAULT_ENTITIES = {
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
+  ess_min_soc: "number.kallare_gx_device_ess_minsta_soc_grans",
   vma_count: "sensor.vma_halland",
   vma_headline: "sensor.vma_halland_rubrik",
   ev_1fas_mode: "input_select.ev_1fas_mode",
@@ -160,9 +161,21 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             <div class="h1">GRANKULLEVÄGEN 19</div>
             <div class="sub">ENERGI · HEM · VÄDER · TRÄDGÅRD</div>
           </div>
-          <div class="clock-box">
-            <div id="clock" class="clock">--:--</div>
-            <div id="clockdate" class="clockdate">–</div>
+          <div class="topright">
+            <div class="wind-box" title="Vind just nu">
+              <svg viewBox="0 0 100 100" class="compass">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#ffffff55" stroke-width="3"/>
+                <text x="50" y="22" text-anchor="middle" font-size="16" fill="#ffffffaa">N</text>
+                <g id="windArrow" transform="rotate(0 50 50)">
+                  <path d="M50,14 L42,50 L50,42 L58,50 Z" fill="#42a5f5"/>
+                </g>
+              </svg>
+              <div class="wind-txt"><small>VIND</small><b id="v-windspeed">– m/s</b><span><span id="v-winddir">–°</span><span id="v-windgust"></span></span></div>
+            </div>
+            <div class="clock-box">
+              <div id="clock" class="clock">--:--</div>
+              <div id="clockdate" class="clockdate">–</div>
+            </div>
           </div>
         </div>
 
@@ -270,18 +283,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
         </div>
 
-        <div class="panel wind">
-          <div class="panel-title">Vind just nu</div>
-          <svg viewBox="0 0 100 100" class="compass">
-            <circle cx="50" cy="50" r="42" fill="none" stroke="#ffffff33" stroke-width="1.5"/>
-            <text x="50" y="14" text-anchor="middle" font-size="9" fill="#ffffff88">N</text>
-            <g id="windArrow" transform="rotate(0 50 50)">
-              <path d="M50,14 L44,50 L50,42 L56,50 Z" fill="#42a5f5"/>
-            </g>
-          </svg>
-          <div class="row small"><span id="v-winddir">–°</span><b id="v-windspeed">– m/s</b></div>
-        </div>
-
         <div class="panel sensors">
           <div class="panel-title">Sensorer</div>
           <div class="row small"><span>🌡️ Ute temp</span><b id="v-sens-temp">– °C</b></div>
@@ -342,6 +343,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
               <h4>Shelly 1</h4>
               <div class="crow"><button class="cbtn" id="c-shelly1" data-action="toggle-shelly1">–</button></div>
             </section>
+            <section>
+              <h4>Husbatteri</h4>
+              <div class="crow"><button class="cbtn" id="c-battfull" data-action="batt-full">–</button></div>
+            </section>
           </div>
         </div>
 
@@ -373,6 +378,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "valve") this._setValve(parseInt(t.dataset.minutes, 10));
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
+      else if (a === "batt-full") this._battFull();
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
@@ -1075,6 +1081,18 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!id || !this._hass) return;
     this._hass.callService(domain, service, Object.assign({ entity_id: id }, extra || {}));
   }
+  // "Ladda fullt": raise the ESS minimum SoC to 100 % (the system then holds / recharges the battery); press again to restore the previous limit
+  _battFull() {
+    const id = this._e("ess_min_soc");
+    if (!id || !this._hass) return;
+    const cur = this._num("ess_min_soc");
+    let target = 100;
+    try {
+      if (cur !== null && cur >= 99) { target = parseFloat(localStorage.getItem("grankulle_prev_minsoc")) || 29; }
+      else if (cur !== null) { localStorage.setItem("grankulle_prev_minsoc", String(cur)); }
+    } catch (e) { if (cur !== null && cur >= 99) target = 29; }
+    this._hass.callService("number", "set_value", { entity_id: id, value: target });
+  }
   _select(key, option) {
     this._svc("input_select", "select_option", key, { option });
   }
@@ -1188,6 +1206,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const m1 = this._st("ev_1fas_mode");
     this._markActive("c-1fas-modes", "mode", m1 ? m1.state : "");
 
+    const lim = this._num("ess_min_soc");
+    const full = lim !== null && lim >= 99, bsoc = this._num("battery_soc");
+    const bf = this.shadowRoot.getElementById("c-battfull");
+    if (bf) { bf.textContent = lim === null ? "ej tillgänglig" : full ? "Håller fulladdat (tryck för normal)" : "Ladda fullt";
+      bf.title = lim === null ? "" : "ESS minsta SoC-gräns: " + Math.round(lim) + " %"; bf.classList.toggle("active", full); }
+
     const s1 = this._st("shelly1");
     this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
 
@@ -1283,7 +1307,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const w = this._stationWind();
     if (!w) return;
     this._set("w-wind", w.ms.toFixed(1) + " m/s");
-    this._set("v-windspeed", w.ms.toFixed(1) + " m/s" + (w.gust !== null ? " · by " + w.gust.toFixed(1) : ""));
+    this._set("v-windspeed", w.ms.toFixed(1) + " m/s");
+    this._set("v-windgust", w.gust !== null ? " · by " + w.gust.toFixed(1) : "");
     if (w.dir !== null) {
       this._set("v-winddir", Math.round(w.dir) + "°");
       const arrow = this.shadowRoot.getElementById("windArrow");
@@ -1619,8 +1644,13 @@ const STYLE = `
   .fday-lo { opacity: 0.7; }
   .fday-rain { opacity: 0.55; font-size: 0.55vw; }
 
-  .wind { right: 21%; bottom: 2.5%; text-align: center; min-width: 0; }
-  .compass { width: 3.6vw; height: 3.6vw; }
+  .topright { display: flex; gap: 0.5vw; align-items: stretch; }
+  .wind-box { display: flex; align-items: center; gap: 0.45vw; background: rgba(8,14,12,0.5); backdrop-filter: blur(3px); border-radius: 8px; padding: 0.25vw 0.7vw; }
+  .wind-txt { display: flex; flex-direction: column; line-height: 1.15; }
+  .wind-txt small { font-size: 0.48vw; opacity: 0.65; letter-spacing: 0.5px; }
+  .wind-txt b { font-size: 0.85vw; font-weight: 700; white-space: nowrap; }
+  .wind-txt span { font-size: 0.55vw; opacity: 0.8; }
+  .compass { width: 2.6vw; height: 2.6vw; }
   #windArrow { transition: transform 0.6s ease; transform-origin: 50px 50px; }
 
   .sensors { right: 2%; bottom: 2.5%; }
