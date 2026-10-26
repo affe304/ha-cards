@@ -108,6 +108,7 @@ const DEFAULT_ENTITIES = {
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
   ess_min_soc: "number.kallare_gx_device_ess_minsta_soc_grans",
+  dess_mode_sw: "switch.dynamic_ess_operating_mode_tillstand",   // virtual Node-RED switch: on = Trade, off = Green
   vma_count: "sensor.vma_halland",
   vma_headline: "sensor.vma_halland_rubrik",
   ev_1fas_mode: "input_select.ev_1fas_mode",
@@ -380,6 +381,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             <section>
               <h4>Husbatteri</h4>
               <div class="crow"><button class="cbtn" id="c-battfull" data-action="batt-full">–</button></div>
+              <div class="clabel" title="Dynamic ESS operating mode">Dynamic ESS</div>
+              <div class="crow" id="c-dess">
+                <button class="cbtn" data-action="dess-mode" data-mode="trade">Trade</button>
+                <button class="cbtn" data-action="dess-mode" data-mode="green">Green</button>
+              </div>
             </section>
           </div>
         </div>
@@ -413,6 +419,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "batt-full") this._battFull();
+      else if (a === "dess-mode") this._svc("switch", t.dataset.mode === "trade" ? "turn_on" : "turn_off", "dess_mode_sw");
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
@@ -1287,6 +1294,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const bf = this.shadowRoot.getElementById("c-battfull");
     if (bf) { bf.textContent = lim === null ? "ej tillgänglig" : full ? "Håller fulladdat (tryck för normal)" : "Ladda fullt";
       bf.title = lim === null ? "" : "ESS minsta SoC-gräns: " + Math.round(lim) + " %"; bf.classList.toggle("active", full); }
+
+    const dm = this._st("dess_mode_sw");
+    this._markActive("c-dess", "mode", dm ? (dm.state === "on" ? "trade" : dm.state === "off" ? "green" : "") : "");
+    const dc = this.shadowRoot.getElementById("c-dess"); if (dc) dc.style.display = dm ? "" : "none";
 
     const s1 = this._st("shelly1");
     this._set("c-shelly1", s1 ? (s1.state === "on" ? "PÅ (tryck för AV)" : s1.state === "off" ? "AV (tryck för PÅ)" : "ej tillgänglig") : "–");
