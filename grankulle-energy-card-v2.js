@@ -1110,6 +1110,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._tile("Temperatur nu", this._n(tNow, 1) + " °C", d.wtemp.length ? "snitt " + this._n(tavg, 1) + " °C" : ""),
         this._tile("Lägst", tmin ? this._n(tmin.v, 1) + " °C" : "–", tmin ? this._dayHm(tmin.t) : ""),
         this._tile("Högst", tmax ? this._n(tmax.v, 1) + " °C" : "–", tmax ? this._dayHm(tmax.t) : ""),
+        ...(d.wcoop.length || this._num("coop_temp") != null ? (() => {
+          const cn = this._num("coop_temp"), cmin = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v < b.v ? r : b)) : null, cmax = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v > b.v ? r : b)) : null;
+          return [
+            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", cn != null && tNow != null ? (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute" : ""),
+            this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) : ""),
+            this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) : ""),
+          ];
+        })() : []),
         this._tile("Lufttryck", pNow != null ? this._n(pNow, 0) + " hPa" : "–", ptr != null ? (ptr >= 0 ? "+" : "") + this._n(ptr, 1) + " hPa under perioden" : ""),
       ],
       charts: [
