@@ -842,6 +842,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._tile("Idag", this._n(this._solarToday, 1) + " kWh", "sedan midnatt"),
         this._tile("Topp " + this._rng(), pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : ""),
         this._tile("Totalt " + this._rng(), this._n(tot, 1) + " kWh", this._dRange === "7d" ? "snitt " + this._n(tot / 7, 1) + " kWh/dygn" : ""),
+        this._tile("Prognos idag (VRM)", this._vrmN("uppskattad_energiproduktion_idag") == null ? "–" : this._n(this._vrmN("uppskattad_energiproduktion_idag"), 1) + " kWh", this._vrmN("uppskattad_energiproduktion_aterstaende_idag") != null ? "kvar " + this._n(this._vrmN("uppskattad_energiproduktion_aterstaende_idag"), 1) + " kWh" : ""),
+        this._tile("Prognos imorgon (VRM)", this._vrmN("beraknad_energiproduktion_imorgon") == null ? "–" : this._n(this._vrmN("beraknad_energiproduktion_imorgon"), 1) + " kWh", this._vrmT("hogsta_rusningstid_imorgon") ? "topp " + this._vrmT("hogsta_rusningstid_imorgon") : ""),
         this._tile("Sedan start", ys ? this._n(parseFloat(ys.state), 0) + " " + (ys.attributes.unit_of_measurement || "") : "–", "Fronius totalt"),
       ],
       charts: [this._dChart("Solproduktion", [{ color: "#ffc83d", pts: d.sol, area: true }], { unit: "kW", d: 2 })],
@@ -994,6 +996,39 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       };
     });
   }
+  // VRM forecasts (victron_remote_monitoring integration): PV production and consumption per day / hour
+  _vrm(suffix) {
+    const hs = this._hass ? this._hass.states : {};
+    const x = hs["sensor.victron_remote_monitoring_" + suffix];
+    if (!x) return null;
+    if (/^(unknown|unavailable)$/.test(x.state)) return null;
+    return x.state;
+  }
+  _vrmN(suffix) { const v = this._vrm(suffix); const n = v == null ? NaN : parseFloat(v); return isFinite(n) ? n : null; }
+  _vrmT(suffix) { const v = this._vrm(suffix); if (!v) return ""; const t = Date.parse(v); return isFinite(t) ? this._hm(t) : ""; }
+  _vrmTiles() {
+    const k = (v, d = 1) => (v == null ? "–" : this._n(v, d) + " kWh");
+    const solI = this._vrmN("uppskattad_energiproduktion_idag"), solK = this._vrmN("uppskattad_energiproduktion_aterstaende_idag"), solM = this._vrmN("beraknad_energiproduktion_imorgon");
+    const fI = this._vrmN("beraknad_energiforbrukning_idag"), fK = this._vrmN("beraknad_energiforbrukning_aterstaende_idag"), fM = this._vrmN("beraknad_energiforbrukning_imorgon");
+    const sub = (a, b) => (a != null ? "kvar idag " + this._n(a, 1) + " kWh" : "") + (b ? " · topp " + b : "");
+    return [
+      this._tile("☀️ Sol idag (VRM-prognos)", k(solI), sub(solK, this._vrmT("hogsta_rusningstid_idag"))),
+      this._tile("☀️ Sol imorgon (prognos)", k(solM), this._vrmT("hogsta_rusningstid_imorgon") ? "topp " + this._vrmT("hogsta_rusningstid_imorgon") : ""),
+      this._tile("🏠 Förbrukning idag (prognos)", k(fI), sub(fK, this._vrmT("hogsta_forbrukningstopptid_idag"))),
+      this._tile("🏠 Förbrukning imorgon (prognos)", k(fM), this._vrmT("hogsta_forbrukningstopptid_imorgon") ? "topp " + this._vrmT("hogsta_forbrukningstopptid_imorgon") : ""),
+      this._tile("Nästa timme (prognos)", this._n(this._vrmN("beraknad_energiproduktion_nasta_timme"), 2) + " / " + this._n(this._vrmN("beraknad_energiforbrukning_nasta_timme"), 2), "kWh sol / förbrukning"),
+    ];
+  }
+  // sol vs. förbrukning per day as paired bars
+  _vrmBars() {
+    const days = [["Igår", "uppskattad_energiproduktion_igar", "beraknad_energiforbrukning_igar"], ["Idag", "uppskattad_energiproduktion_idag", "beraknad_energiforbrukning_idag"], ["Imorgon", "beraknad_energiproduktion_imorgon", "beraknad_energiforbrukning_imorgon"]]
+      .map((d) => ({ n: d[0], sol: this._vrmN(d[1]), use: this._vrmN(d[2]) }));
+    const max = Math.max(1, ...days.map((d) => Math.max(d.sol || 0, d.use || 0)));
+    const bar = (v, col) => '<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><div style="height:12px;border-radius:3px;background:' + col + ';width:' + Math.round(((v || 0) / max) * 62) + '%"></div><span style="font-size:12px;opacity:.85">' + this._n(v, 1) + " kWh</span></div>";
+    return '<div class="d-ct">Prognos per dygn (VRM) <span class="d-leg"><span><i style="background:#ffc83d"></i>Sol</span><span><i style="background:#5ab0ff"></i>Förbrukning</span></span></div>' +
+      days.map((d) => '<div style="display:grid;grid-template-columns:64px 1fr;gap:6px;align-items:center;margin-bottom:6px"><div style="font-size:13px;font-weight:700">' + d.n + "</div><div>" + bar(d.sol, "#ffc83d") + bar(d.use, "#5ab0ff") +
+        (d.sol != null && d.use != null ? '<div style="font-size:12px;opacity:.7">' + (d.sol - d.use >= 0 ? "överskott " : "underskott ") + this._n(Math.abs(d.sol - d.use), 1) + " kWh</div>" : "") + "</div></div>").join("");
+  }
   _dTab_plan(d) {
     const P = this._plan, now = Date.now();
     const sName = (k) => ({ 0: "Målnivå", 1: "Egenförbrukning", 2: "Prioritera batteri", 3: "Prioritera nät" }[k] || "okänd (" + k + ")");
@@ -1004,6 +1039,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const strat = { targetsoc: "Målnivå", selfconsume: "Egenförbrukning", probattery: "Prioritera batteri", progrid: "Prioritera nät" };
     const reac = { idle_no_opportunity: "Vilar – ingen fördel just nu", scheduled_selfconsume: "Egenförbrukning enligt plan", scheduled_charge_allow_grid: "Laddar från nätet enligt plan", scheduled_charge_enhanced: "Laddar extra enligt plan", selfconsume_accept_charge: "Egenförbrukning, tar emot laddning", idle_scheduled_feedin: "Vilar, säljer enligt plan", scheduled_discharge: "Urladdar enligt plan", selfconsume_accept_discharge: "Egenförbrukning, tillåter urladdning", idle_maintain_surplus: "Vilar, behåller överskott", idle_maintain_targetsoc: "Vilar, håller målnivån", scheduled_charge_smooth_transition: "Laddar mjukt enligt plan", scheduled_charge_feedin: "Laddar och säljer enligt plan", scheduled_charge_no_grid: "Laddar utan nät enligt plan", scheduled_minimum_discharge: "Minimal urladdning enligt plan", selfconsume_no_grid: "Egenförbrukning utan nät" };
     const hdr = [
+      ...this._vrmTiles(),
       this._tile("Läge", modeTxt, modeTxt === "Trade" ? "köper billigt, säljer dyrt" : modeTxt === "Green" ? "sol först, ingen nätladdning för handel" : ""),
       this._tile("Strategi", strat[ha("dynamisk_ess_strategi")] || ha("dynamisk_ess_strategi") || "–", "VRM:s grundinställning"),
       this._tile("Just nu", reac[ha("dynamisk_ess_reaktiv_strategi")] || ha("dynamisk_ess_reaktiv_strategi") || "–"),
@@ -1011,13 +1047,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     ];
     // HA entity ids of the Victron integration are fixed by name; look them up lazily
     const hs = this._hass ? this._hass.states : {}, pick = (suffix) => { const k = Object.keys(hs).find((x) => x.endsWith(suffix)); return k ? hs[k].state : null; };
-    hdr[1] = this._tile("Strategi", strat[pick("dynamisk_ess_strategi")] || pick("dynamisk_ess_strategi") || "–", "VRM:s grundinställning");
+    const o = 5;
+    hdr[o + 1] = this._tile("Strategi", strat[pick("dynamisk_ess_strategi")] || pick("dynamisk_ess_strategi") || "–", "VRM:s grundinställning");
     const rc = pick("dynamisk_ess_reaktiv_strategi");
-    hdr[2] = this._tile("Just nu", reac[rc] || rc || "–");
+    hdr[o + 2] = this._tile("Just nu", reac[rc] || rc || "–");
     const mt = pick("dynamisk_ess_malniva_soc");
-    hdr[3] = this._tile("Målnivå", mt && isFinite(parseFloat(mt)) ? this._n(parseFloat(mt), 0) + " %" : "–", "batteri nu " + this._n(this._num("battery_soc"), 0) + " %");
-    if (!P) return { tiles: hdr, charts: ['<div class="d-empty">Hämtar planen från GX-enheten…</div>'] };
-    if (P.error) return { tiles: hdr, charts: ['<div class="d-empty">Kunde inte läsa planen: ' + P.error + '. Planen hämtas direkt från GX-enheten och kräver att du är hemma på nätverket (http).</div>'] };
+    hdr[o + 3] = this._tile("Målnivå", mt && isFinite(parseFloat(mt)) ? this._n(parseFloat(mt), 0) + " %" : "–", "batteri nu " + this._n(this._num("battery_soc"), 0) + " %");
+    if (!P) return { tiles: hdr, charts: ['<div class="d-empty">Hämtar planen från GX-enheten…</div>'], extra: this._vrmBars() };
+    if (P.error) return { tiles: hdr, charts: ['<div class="d-empty">Kunde inte läsa planen: ' + P.error + '. Planen hämtas direkt från GX-enheten och kräver att du är hemma på nätverket (http).</div>'], extra: this._vrmBars() };
     const sl = P.slots.filter((x) => x.t + x.dur > now);
     if (!sl.length) return { tiles: hdr, charts: ['<div class="d-empty">Planen är tom just nu.</div>'] };
     const seg = [];
@@ -1028,6 +1065,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     hdr.push(this._tile("Planen täcker", "till " + this._dayHm(end), sl.length + " perioder à " + Math.round(sl[0].dur / 60000) + " min"));
     const price = (this._hourly || []).filter((r) => r.t + 3600e3 > now && r.t < end).map((r) => ({ t: r.t, v: r.price }));
     const charts = [
+      this._vrmBars(),
       this._dChart("Planerad målnivå (batteri %) och faktisk nivå", [{ name: "Plan (mål)", color: "#ffc83d", step: true, pts: sl.map((x) => ({ t: x.t, v: x.target })) }, { name: "Faktisk", color: "#4dd0e1", pts: d.soc }], { unit: "%", d: 0, min: 0, max: 100, t0: now - 6 * 3600e3, t1: end, h: 200 }),
     ];
     if (price.length) charts.push(this._dChart("Elpris under planen", [{ color: "#f2c94c", step: true, area: true, pts: price }], { unit: "kr/kWh", d: 2, t0: now - 6 * 3600e3, t1: end, h: 150 }));
