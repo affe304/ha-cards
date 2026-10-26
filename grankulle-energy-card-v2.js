@@ -115,6 +115,7 @@ const DEFAULT_ENTITIES = {
   frame_player: "media_player.65_the_frame_tq65ls03fauxxc",   // Samsung The Frame (samsungtv)
   frame_remote: "remote.65_the_frame_tq65ls03fauxxc",
   frame_cast: "media_player.the_frame",                        // same TV as a Cast target (used to show the dashboard)
+  ess_min_soc_normal: "input_number.ess_minsta_soc_normal",   // value the minimum SoC returns to when "Ladda fullt" ends (also used by the automations)
   dess_mode_sw: "switch.dynamic_ess_operating_mode_tillstand",   // virtual Node-RED switch: on = Trade, off = Green
   vma_count: "sensor.vma_halland",
   vma_headline: "sensor.vma_halland_rubrik",
@@ -1381,16 +1382,21 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!id || !this._hass) return;
     this._hass.callService(domain, service, Object.assign({ entity_id: id }, extra || {}));
   }
-  // "Ladda fullt": raise the ESS minimum SoC to 100 % (the system then holds / recharges the battery); press again to restore the previous limit
+  // "Ladda fullt": raise the ESS minimum SoC to 100 % (the system then holds / recharges the battery).
+  // It ends by itself: an automation in Home Assistant restores the normal limit once the battery is full; pressing again restores it at once.
+  // The normal limit is kept in input_number.ess_minsta_soc_normal (written here when Ladda fullt is switched on).
   _battFull() {
     const id = this._e("ess_min_soc");
     if (!id || !this._hass) return;
-    const cur = this._num("ess_min_soc");
+    const cur = this._num("ess_min_soc"), helper = this._e("ess_min_soc_normal"), hv = this._num("ess_min_soc_normal");
     let target = 100;
-    try {
-      if (cur !== null && cur >= 99) { target = parseFloat(localStorage.getItem("grankulle_prev_minsoc")) || 29; }
-      else if (cur !== null) { localStorage.setItem("grankulle_prev_minsoc", String(cur)); }
-    } catch (e) { if (cur !== null && cur >= 99) target = 29; }
+    if (cur !== null && cur >= 99) {
+      target = hv !== null ? hv : 29;
+      try { const p = parseFloat(localStorage.getItem("grankulle_prev_minsoc")); if (hv === null && p) target = p; } catch (e) {}
+    } else if (cur !== null) {
+      if (helper && this._hass.states[helper]) this._hass.callService("input_number", "set_value", { entity_id: helper, value: cur });
+      try { localStorage.setItem("grankulle_prev_minsoc", String(cur)); } catch (e) {}
+    }
     this._hass.callService("number", "set_value", { entity_id: id, value: target });
   }
   // Samsung The Frame: turn_off on a Frame = Art mode, a held power key = fully off; the dashboard is cast with Home Assistant's Cast "show view"
@@ -1518,7 +1524,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const lim = this._num("ess_min_soc");
     const full = lim !== null && lim >= 99, bsoc = this._num("battery_soc");
     const bf = this.shadowRoot.getElementById("c-battfull");
-    if (bf) { bf.textContent = lim === null ? "ej tillgänglig" : full ? "Håller fulladdat (tryck för normal)" : "Ladda fullt";
+    if (bf) { bf.textContent = lim === null ? "ej tillgänglig" : full ? "Håller fulladdat · släpper när fullt (tryck för normal)" : "Ladda fullt";
       bf.title = lim === null ? "" : "ESS minsta SoC-gräns: " + Math.round(lim) + " %"; bf.classList.toggle("active", full); }
 
     const fp = this._st("frame_player"), fsec = this.shadowRoot.getElementById("c-frame-sec");
