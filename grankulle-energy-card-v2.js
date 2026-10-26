@@ -287,7 +287,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
           <div class="tag-lbl">VÄXTHUS</div><div class="tag-val" id="tag-v-greenhouse">–</div>
         </div>
-        <div class="tag" id="tag-coop" style="left:87%; top:58%;">
+        <div class="tag" id="tag-coop" data-action="detail-open" data-tab="vader" style="left:87%; top:58%;">
           <div class="tag-lbl">HÖNSHUS</div><div class="tag-val" id="tag-v-coop">–</div>
         </div>
         <div class="tag blue" id="tag-hose" data-action="toggle-hose" style="left:84%; top:52%; cursor:pointer;">
@@ -322,12 +322,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
         </div>
 
-        <div class="panel sensors">
+        <div class="panel sensors" data-action="detail-open" data-tab="vader" title="Visa väderhistorik">
           <div class="panel-title">Sensorer</div>
           <div class="row small"><span>🌡️ Ute temp</span><b id="v-sens-temp">– °C</b></div>
           <div class="row small"><span>💧 Luftfuktighet</span><b id="v-sens-hum">– %</b></div>
           <div class="row small"><span>🌀 Lufttryck</span><b id="v-sens-press">– hPa</b></div>
           <div class="row small"><span>☀️ UV-index</span><b id="v-sens-uv">–</b></div>
+          <div class="row small"><span>🐔 Hönshus</span><b id="v-sens-coop">– °C</b></div>
         </div>
 
         <div class="controls" id="controls">
@@ -1811,6 +1812,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
     const coopTemp = this._num("coop_temp");
     this._set("tag-v-coop", coopTemp === null ? "–" : coopTemp.toFixed(1) + " °C");
+    this._set("v-sens-coop", coopTemp === null ? "–" : coopTemp.toFixed(1) + " °C");
 
     const ghTemp = this._num("greenhouse_temp");
     const ghHum = this._num("greenhouse_humidity");
@@ -2045,6 +2047,7 @@ const STYLE = `
   }
   /* ---- detail view ---- */
   .tag[data-action="detail-open"], .panel[data-action="detail-open"] { cursor: pointer; }
+  .wind-box[data-action="detail-open"]:hover { outline: 1px solid rgba(255,255,255,0.45); }
   .tag[data-action="detail-open"]:hover, .panel[data-action="detail-open"]:hover { outline: 1px solid rgba(255,255,255,0.45); }
   .detail { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,0.62); backdrop-filter: blur(3px); align-items: center; justify-content: center; padding: 2vh 2vw; box-sizing: border-box; }
   .d-box { width: min(1100px, 100%); max-height: 94vh; display: flex; flex-direction: column; background: rgba(14,20,19,0.97); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; box-shadow: 0 10px 50px rgba(0,0,0,0.6); overflow: hidden; }
