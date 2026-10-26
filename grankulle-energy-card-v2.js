@@ -46,6 +46,40 @@ const DEFAULT_ENTITIES = {
   solar_yield_total: "sensor.fronius_symo_12_5_3_m_id_20_total_avkastning",
   mp_grid_to_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ac_in_1_till_vaxelriktare",
   mp_pv_to_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ut_till_vaxelriktare",
+  mp_state: "sensor.multiplus_ii_48_5000_70_50_id_276_tillstand",
+  mp_dc_p: "sensor.multiplus_ii_48_5000_70_50_id_276_dc_effekt",
+  mp_dc_v: "sensor.multiplus_ii_48_5000_70_50_id_276_dc_spanning",
+  mp_dc_a: "sensor.multiplus_ii_48_5000_70_50_id_276_dc_strom",
+  mp_in_p1: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangseffekt_l1",
+  mp_out_p1: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangseffekt_l1",
+  mp_in_v1: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangsspanning_l1",
+  mp_out_a1: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangsstrom_l1",
+  mp_out_va1: "sensor.multiplus_ii_48_5000_70_50_id_276_skenbar_utgangseffekt_l1",
+  mp_in_p2: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangseffekt_l2",
+  mp_out_p2: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangseffekt_l2",
+  mp_in_v2: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangsspanning_l2",
+  mp_out_a2: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangsstrom_l2",
+  mp_out_va2: "sensor.multiplus_ii_48_5000_70_50_id_276_skenbar_utgangseffekt_l2",
+  mp_in_p3: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangseffekt_l3",
+  mp_out_p3: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangseffekt_l3",
+  mp_in_v3: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangsspanning_l3",
+  mp_out_a3: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangsstrom_l3",
+  mp_out_va3: "sensor.multiplus_ii_48_5000_70_50_id_276_skenbar_utgangseffekt_l3",
+  mp_in_f1: "sensor.multiplus_ii_48_5000_70_50_id_276_ingangsfrekvens_l1",
+  mp_out_f1: "sensor.multiplus_ii_48_5000_70_50_id_276_utgangsfrekvens_l1",
+  mp_u0_in: "sensor.multiplus_ii_48_5000_70_50_id_276_0_linje_1_ingangseffekt",
+  mp_u0_out: "sensor.multiplus_ii_48_5000_70_50_id_276_0_linje_1_utgangseffekt",
+  mp_u0_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_0_inverterad_effekt",
+  mp_u1_in: "sensor.multiplus_ii_48_5000_70_50_id_276_1_linje_1_ingangseffekt",
+  mp_u1_out: "sensor.multiplus_ii_48_5000_70_50_id_276_1_linje_1_utgangseffekt",
+  mp_u1_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_1_inverterad_effekt",
+  mp_u2_in: "sensor.multiplus_ii_48_5000_70_50_id_276_2_linje_1_ingangseffekt",
+  mp_u2_out: "sensor.multiplus_ii_48_5000_70_50_id_276_2_linje_1_utgangseffekt",
+  mp_u2_inv: "sensor.multiplus_ii_48_5000_70_50_id_276_2_inverterad_effekt",
+  mp_e_pass: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ac_in_1_till_ac_ut",
+  mp_e_inv_load: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_vaxelriktare_till_ac_ut",
+  mp_e_out_grid: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_ac_ut_till_ac_in_1",
+  mp_e_inv_grid: "sensor.multiplus_ii_48_5000_70_50_id_276_energi_fran_vaxelriktare_till_ac_in_1",
   dc_charge_energy: "sensor.kallare_gx_device_dc_batteri_laddningsenergi",
   dc_discharge_energy: "sensor.kallare_gx_device_dc_batteri_urladdningsenergi",
 
@@ -614,7 +648,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _detailTabs() {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
-      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "mp", t: "🔌 Multiplus" },
     ];
   }
   _openDetail(tab) {
@@ -643,7 +677,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (c[range] && now - c[range].at < 60000) { this._dData = c[range].d; this._renderDetail(); return; }
     try {
       const span = range === "24h" ? 24 * 3600e3 : 7 * 24 * 3600e3, per = range === "24h" ? "5minute" : "hour";
-      const keys = ["fronius_power", "house_power_l1", "house_power_l2", "house_power_l3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "battery_power", "battery_soc", "zaptec_power", "tibber_price", "dc_charge_energy", "dc_discharge_energy"];
+      const keys = ["fronius_power", "house_power_l1", "house_power_l2", "house_power_l3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "battery_power", "battery_soc", "zaptec_power", "tibber_price", "dc_charge_energy", "dc_discharge_energy", "mp_dc_p", "mp_in_p1", "mp_in_p2", "mp_in_p3", "mp_out_p1", "mp_out_p2", "mp_out_p3"];
       const ids = keys.map((k) => this._e(k)).filter(Boolean);
       const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(now - span).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: ids, period: per, types: ["mean", "change"] });
       const rows = (k, f, field) => ((st[this._e(k)] || []).map((r) => ({ t: typeof r.start === "number" ? r.start : Date.parse(r.start), v: r[field || "mean"] == null ? null : r[field || "mean"] * (f || 1) })));
@@ -663,6 +697,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         batt: rows("battery_power", 0.001).filter((r) => r.v != null),
         soc: rows("battery_soc").filter((r) => r.v != null),
         price: rows("tibber_price").filter((r) => r.v != null),
+        mpin: sum(["mp_in_p1", "mp_in_p2", "mp_in_p3"], 0.001), mpout: sum(["mp_out_p1", "mp_out_p2", "mp_out_p3"], 0.001),
+        mpo1: rows("mp_out_p1", 0.001).filter((r) => r.v != null), mpo2: rows("mp_out_p2", 0.001).filter((r) => r.v != null), mpo3: rows("mp_out_p3", 0.001).filter((r) => r.v != null),
+        mpdc: rows("mp_dc_p", 0.001).filter((r) => r.v != null),
         chg: rows("dc_charge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
         dis: rows("dc_discharge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
       };
@@ -878,6 +915,44 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       ],
       charts: [this._dChart("Laddeffekt", [{ color: "#3ddc84", pts: d.car, area: true }], { unit: "kW", d: 2, h: 190 })],
       extra: '<div class="d-ct">Laddningar senaste dygnet <span class="d-note">kostnad = nätandel × Tibber-pris, sol och batteri räknas som gratis</span></div>' + (evs.length ? evs.map((e) => '<div class="ev ev-green"><div class="ev-t">' + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="d-empty">Inga laddningar senaste dygnet</div>'),
+    };
+  }
+  _dTab_mp(d) {
+    const n = (k) => this._num(k, null), kw = (k) => { const v = n(k); return v == null ? null : v / 1000; };
+    const sumK = (ks) => { let t = 0, c = 0; ks.forEach((k) => { const v = n(k); if (v != null) { t += v; c++; } }); return c ? t / 1000 : null; };
+    const stS = this._st("mp_state"), stTxt = { off: "Av", low_power: "Lågeffekt", fault: "FEL", bulk: "Bulk", absorption: "Absorption", float: "Underhållsladdning", storage: "Förvaring", equalize: "Utjämning", passthru: "Genomsläpp", inverting: "Växelriktar", power_assist: "Power assist", power_supply: "Nätaggregat", sustain: "Vänteläge", external_control: "Extern styrning" }[stS ? stS.state : ""] || (stS ? stS.state : "–");
+    const inK = sumK(["mp_in_p1", "mp_in_p2", "mp_in_p3"]), outK = sumK(["mp_out_p1", "mp_out_p2", "mp_out_p3"]), dcK = kw("mp_dc_p");
+    const ph = (pre) => [1, 2, 3].map((i) => this._n(n(pre + i), 0)).join(" / ");
+    const alarms = [["larm_om_forlorat_elnat", "Förlorat nät"], ["larm_for_hog_dc_spanning", "Hög DC-spänning"], ["larm_for_hog_dc_strom", "Hög DC-ström"], ["larm_for_hog_temperatur", "Hög temperatur"], ["larm_for_lag_batteriniva", "Låg batterinivå"], ["overbelastningslarm", "Överbelastning"], ["rippellarm", "Rippel"], ["spanningssensorlarm", "Spänningssensor"], ["temperatursensorlarm", "Temperatursensor"], ["fasrotationslarm", "Fasrotation"]];
+    const P = "sensor.multiplus_ii_48_5000_70_50_id_276_", H = this._hass && this._hass.states || {};
+    const act = alarms.filter((a) => H[P + a[0]] && !/^(no_alarm|unknown|unavailable)$/.test(H[P + a[0]].state)).map((a) => a[1]);
+    const known = alarms.filter((a) => H[P + a[0]]).length;
+    const phNames = ["L1", "L2", "L3"];
+    const unit = (u) => { const i = n("mp_u" + u + "_in"), o = n("mp_u" + u + "_out"), v = n("mp_u" + u + "_inv"); return this._tile("Enhet " + u + " · " + phNames[u], this._n(o, 0) + " W ut", "in " + this._n(i, 0) + " W · inverterar " + this._n(v, 0) + " W"); };
+    const e = (k) => { const v = n(k); return v == null ? "–" : this._n(v, v < 100 ? 1 : 0) + " kWh"; };
+    const nom = 230;
+    const volts = [1, 2, 3].map((i) => this._n(n("mp_in_v" + i), 0)).join("/");
+    return {
+      tiles: [
+        this._tile("Tillstånd", stTxt, ({ bulk: "snabbladdar batteriet", absorption: "toppladdar", float: "underhåll", inverting: "kör på batteri", passthru: "nätet rakt igenom" }[stS ? stS.state : ""] || "") + " · 3 enheter"),
+        this._tile("Larm", act.length ? act.join(", ") : known ? "Inga larm" : "–", known ? known + " larm övervakas" : "", act.length ? "d-warn" : ""),
+        this._tile("Från nätet (in)", this._n(inK, 2) + " kW", "L1/L2/L3: " + ph("mp_in_p") + " W"),
+        this._tile("Till huset (ut)", this._n(outK, 2) + " kW", "L1/L2/L3: " + ph("mp_out_p") + " W"),
+        this._tile("DC-sida", this._n(dcK, 2) + " kW", this._n(n("mp_dc_v"), 1) + " V · " + this._n(n("mp_dc_a"), 1) + " A"),
+        this._tile("Nätspänning L1/L2/L3", volts + " V", this._n(n("mp_in_f1"), 2) + " Hz in · " + this._n(n("mp_out_f1"), 2) + " Hz ut"),
+        this._tile("Utström L1/L2/L3", [1, 2, 3].map((i) => this._n(n("mp_out_a" + i), 1)).join("/") + " A", "skenbart: " + ph("mp_out_va") + " VA"),
+        unit(0), unit(1), unit(2),
+        this._tile("Nät → batteri (totalt)", e("mp_grid_to_inv"), "sedan start"),
+        this._tile("AC-ut sol → batteri", e("mp_pv_to_inv"), "sedan start"),
+        this._tile("Batteri → hus", e("mp_e_inv_load"), "sedan start"),
+        this._tile("Genomsläpp nät → hus", e("mp_e_pass"), "sedan start"),
+        this._tile("Till nätet", e("mp_e_out_grid"), "från AC-ut · batteri→nät " + e("mp_e_inv_grid")),
+      ],
+      charts: [
+        this._dChart("Effekt ut per fas (Multiplus → hus)", [{ name: "L1", color: "#ffc83d", pts: d.mpo1 }, { name: "L2", color: "#5ab0ff", pts: d.mpo2 }, { name: "L3", color: "#3ddc84", pts: d.mpo3 }], { unit: "kW", d: 2 }),
+        this._dChart("Totalt: nät in / hus ut", [{ name: "Från nätet", color: "#ff7a59", pts: d.mpin }, { name: "Till huset", color: "#5ab0ff", pts: d.mpout }], { unit: "kW", d: 2, h: 190 }),
+        this._dChart("DC-effekt (batterisidan)", [{ color: "#4dd0e1", pts: d.mpdc, area: true }], { unit: "kW", d: 2, h: 160 }),
+      ],
     };
   }
   _dTab_pris(d) {
@@ -1769,6 +1844,7 @@ const STYLE = `
   .d-body { padding: 14px; overflow-y: auto; min-height: 60vh; }
   .d-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
   .d-tile { background: rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 12px; }
+  .d-tile.d-warn { background: rgba(255,90,70,0.25); border: 1px solid #ff7a59; }
   .d-tl { font-size: 12px; opacity: 0.7; }
   .d-tv { font-size: 21px; font-weight: 800; margin-top: 2px; }
   .d-ts { font-size: 12px; opacity: 0.75; margin-top: 2px; }
