@@ -405,7 +405,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       if (!t) { return; }
       const a = t.dataset.action;
       if (a === "detail-open") this._openDetail(t.dataset.tab);
-      else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); }
+      else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); if (this._dTab === "plan") this._loadPlan(); }
       else if (a === "detail-range") { this._dRange = t.dataset.range; this._renderDetail(); this._loadDetail(); }
       else if (a === "detail-close") this._closeDetail();
       else if (a === "toggle-controls") this._toggleControls();
@@ -655,7 +655,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _detailTabs() {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
-      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "mp", t: "🔌 Multiplus" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "mp", t: "🔌 Multiplus" },
     ];
   }
   _openDetail(tab) {
@@ -666,10 +666,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     o.style.display = "flex";
     this._renderDetail();
     this._loadDetail();
+    if (this._dTab === "plan") this._loadPlan();
     clearInterval(this._dTimer);
     this._dTimer = setInterval(() => { this._renderDetail(); }, 15000);
     clearInterval(this._dLoad);
-    this._dLoad = setInterval(() => this._loadDetail(), 90000);
+    this._dLoad = setInterval(() => { this._loadDetail(); if (this._dTab === "plan") this._loadPlan(); }, 90000);
   }
   _closeDetail() {
     const o = this.shadowRoot.getElementById("detail");
@@ -923,6 +924,116 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       charts: [this._dChart("Laddeffekt", [{ color: "#3ddc84", pts: d.car, area: true }], { unit: "kW", d: 2, h: 190 })],
       extra: '<div class="d-ct">Laddningar senaste dygnet <span class="d-note">kostnad = nätandel × Tibber-pris, sol och batteri räknas som gratis</span></div>' + (evs.length ? evs.map((e) => '<div class="ev ev-green"><div class="ev-t">' + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="d-empty">Inga laddningar senaste dygnet</div>'),
     };
+  }
+  // ----- Dynamic ESS plan: read straight from the GX device (MQTT over WebSocket, same as the Victron GUI) -- LAN only
+  async _loadPlan() {
+    const c = this._planCache;
+    if (c && Date.now() - c.at < 45000) return;
+    if (this._planBusy) return;
+    this._planBusy = true;
+    try {
+      const host = (this._config && this._config.gx_host) || "192.168.1.129";
+      const slots = await this._gxPlan(host, this._config && this._config.gx_portal_id);
+      this._plan = { at: Date.now(), slots };
+      this._planCache = { at: Date.now() };
+    } catch (e) { this._plan = { at: Date.now(), error: String((e && e.message) || e) }; }
+    this._planBusy = false;
+    this._renderDetail();
+  }
+  _gxPlan(host, portalId) {
+    const enc = new TextEncoder(), dec = new TextDecoder();
+    const str = (x) => { const b = enc.encode(x); return [b.length >> 8, b.length & 255, ...b]; };
+    const rl = (n) => { const o = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 128; o.push(d); } while (n > 0); return o; };
+    const pkt = (t, body) => new Uint8Array([t, ...rl(body.length), ...body]);
+    return new Promise((resolve, reject) => {
+      let ws, pid = portalId || null, done = false, subscribed = false;
+      const got = {};
+      const finish = (err) => {
+        if (done) return; done = true; clearTimeout(tm);
+        try { ws.close(); } catch (e) {}
+        if (err) return reject(new Error(err));
+        const base = "N/" + pid + "/settings/0/Settings/DynamicEss/Schedule/";
+        const v = (i, k) => { try { return JSON.parse(got[base + i + "/" + k]).value; } catch (e) { return null; } };
+        const out = [];
+        for (let i = 0; i < 96; i++) {
+          const st = v(i, "Start");
+          if (st == null) continue;
+          out.push({ t: st * 1000, dur: (v(i, "Duration") || 900) * 1000, strat: v(i, "Strategy"), target: v(i, "TargetSoc"), soc: v(i, "Soc"), feed: v(i, "AllowGridFeedIn"), flags: v(i, "Flags") });
+        }
+        out.sort((a, b) => a.t - b.t);
+        if (!out.length) return reject(new Error("tom plan"));
+        resolve(out);
+      };
+      const tm = setTimeout(() => finish(pid ? null : "GX svarar inte"), 7000);
+      try { ws = new WebSocket("ws://" + host + "/websocket-mqtt", "mqtt"); } catch (e) { clearTimeout(tm); return reject(e); }
+      ws.binaryType = "arraybuffer";
+      ws.onerror = () => finish("kan inte nå GX-enheten (" + host + ")");
+      ws.onopen = () => ws.send(pkt(0x10, [...str("MQTT"), 4, 2, 0, 60, ...str("grankullecard" + Math.random().toString(16).slice(2, 8))]));
+      let buf = new Uint8Array(0), last = 0;
+      const sub = () => {
+        subscribed = true;
+        ws.send(pkt(0x82, [0, 2, ...str("N/" + pid + "/settings/0/Settings/DynamicEss/Schedule/#"), 0]));
+        ws.send(pkt(0x30, [...str("R/" + pid + "/keepalive")]));
+        setTimeout(() => finish(), 2500);
+      };
+      ws.onmessage = (ev) => {
+        const d = new Uint8Array(ev.data), nb = new Uint8Array(buf.length + d.length); nb.set(buf); nb.set(d, buf.length); buf = nb;
+        while (buf.length >= 2) {
+          let i = 1, m = 1, len = 0, b;
+          do { if (i >= buf.length) return; b = buf[i++]; len += (b & 127) * m; m *= 128; } while (b & 128);
+          if (buf.length < i + len) return;
+          const t = buf[0] >> 4, body = buf.slice(i, i + len); buf = buf.slice(i + len);
+          if (t === 2) {
+            if (pid) sub(); else ws.send(pkt(0x82, [0, 1, ...str("N/+/system/0/Serial"), 0]));
+          } else if (t === 3) {
+            const tl = (body[0] << 8) | body[1], topic = dec.decode(body.slice(2, 2 + tl)), pay = dec.decode(body.slice(2 + tl));
+            if (!pid) { const mm = topic.match(/^N\/([^/]+)\/system\/0\/Serial/); if (mm) { pid = mm[1]; sub(); } }
+            else got[topic] = pay;
+          }
+        }
+      };
+    });
+  }
+  _dTab_plan(d) {
+    const P = this._plan, now = Date.now();
+    const sName = (k) => ({ 0: "Målnivå", 1: "Egenförbrukning", 2: "Prioritera batteri", 3: "Prioritera nät" }[k] || "okänd (" + k + ")");
+    const sCol = { 0: "#4dd0e1", 1: "#3ddc84", 2: "#ffc83d", 3: "#ff7a59" };
+    const ha = (k) => { const x = this._hass && this._hass.states[k]; return x ? x.state : null; };
+    const mode = this._st("dess_mode_sw");
+    const modeTxt = mode ? (mode.state === "on" ? "Trade" : mode.state === "off" ? "Green" : "–") : "–";
+    const strat = { targetsoc: "Målnivå", selfconsume: "Egenförbrukning", probattery: "Prioritera batteri", progrid: "Prioritera nät" };
+    const reac = { idle_no_opportunity: "Vilar – ingen fördel just nu", scheduled_selfconsume: "Egenförbrukning enligt plan", scheduled_charge_allow_grid: "Laddar från nätet enligt plan", scheduled_charge_enhanced: "Laddar extra enligt plan", selfconsume_accept_charge: "Egenförbrukning, tar emot laddning", idle_scheduled_feedin: "Vilar, säljer enligt plan", scheduled_discharge: "Urladdar enligt plan", selfconsume_accept_discharge: "Egenförbrukning, tillåter urladdning", idle_maintain_surplus: "Vilar, behåller överskott", idle_maintain_targetsoc: "Vilar, håller målnivån", scheduled_charge_smooth_transition: "Laddar mjukt enligt plan", scheduled_charge_feedin: "Laddar och säljer enligt plan", scheduled_charge_no_grid: "Laddar utan nät enligt plan", scheduled_minimum_discharge: "Minimal urladdning enligt plan", selfconsume_no_grid: "Egenförbrukning utan nät" };
+    const hdr = [
+      this._tile("Läge", modeTxt, modeTxt === "Trade" ? "köper billigt, säljer dyrt" : modeTxt === "Green" ? "sol först, ingen nätladdning för handel" : ""),
+      this._tile("Strategi", strat[ha("dynamisk_ess_strategi")] || ha("dynamisk_ess_strategi") || "–", "VRM:s grundinställning"),
+      this._tile("Just nu", reac[ha("dynamisk_ess_reaktiv_strategi")] || ha("dynamisk_ess_reaktiv_strategi") || "–"),
+      this._tile("Målnivå", ha("dynamisk_ess_malniva_soc") ? this._n(parseFloat(ha("dynamisk_ess_malniva_soc")), 0) + " %" : "–", "batteri nu " + this._n(this._num("battery_soc"), 0) + " %"),
+    ];
+    // HA entity ids of the Victron integration are fixed by name; look them up lazily
+    const hs = this._hass ? this._hass.states : {}, pick = (suffix) => { const k = Object.keys(hs).find((x) => x.endsWith(suffix)); return k ? hs[k].state : null; };
+    hdr[1] = this._tile("Strategi", strat[pick("dynamisk_ess_strategi")] || pick("dynamisk_ess_strategi") || "–", "VRM:s grundinställning");
+    const rc = pick("dynamisk_ess_reaktiv_strategi");
+    hdr[2] = this._tile("Just nu", reac[rc] || rc || "–");
+    const mt = pick("dynamisk_ess_malniva_soc");
+    hdr[3] = this._tile("Målnivå", mt && isFinite(parseFloat(mt)) ? this._n(parseFloat(mt), 0) + " %" : "–", "batteri nu " + this._n(this._num("battery_soc"), 0) + " %");
+    if (!P) return { tiles: hdr, charts: ['<div class="d-empty">Hämtar planen från GX-enheten…</div>'] };
+    if (P.error) return { tiles: hdr, charts: ['<div class="d-empty">Kunde inte läsa planen: ' + P.error + '. Planen hämtas direkt från GX-enheten och kräver att du är hemma på nätverket (http).</div>'] };
+    const sl = P.slots.filter((x) => x.t + x.dur > now);
+    if (!sl.length) return { tiles: hdr, charts: ['<div class="d-empty">Planen är tom just nu.</div>'] };
+    const seg = [];
+    sl.forEach((x) => { const l = seg[seg.length - 1]; if (l && l.strat === x.strat && l.feed === x.feed) { l.end = x.t + x.dur; l.t1 = x.target; } else seg.push({ strat: x.strat, feed: x.feed, start: x.t, end: x.t + x.dur, t0: x.target, t1: x.target }); });
+    const end = sl[sl.length - 1].t + sl[sl.length - 1].dur;
+    const nxt = seg[1];
+    hdr.push(this._tile("Nästa byte", nxt ? this._dayHm(nxt.start) : "–", nxt ? sName(nxt.strat) : "oförändrat resten av planen"));
+    hdr.push(this._tile("Planen täcker", "till " + this._dayHm(end), sl.length + " perioder à " + Math.round(sl[0].dur / 60000) + " min"));
+    const price = (this._hourly || []).filter((r) => r.t + 3600e3 > now && r.t < end).map((r) => ({ t: r.t, v: r.price }));
+    const charts = [
+      this._dChart("Planerad målnivå (batteri %) och faktisk nivå", [{ name: "Plan (mål)", color: "#ffc83d", step: true, pts: sl.map((x) => ({ t: x.t, v: x.target })) }, { name: "Faktisk", color: "#4dd0e1", pts: d.soc }], { unit: "%", d: 0, min: 0, max: 100, t0: now - 6 * 3600e3, t1: end, h: 200 }),
+    ];
+    if (price.length) charts.push(this._dChart("Elpris under planen", [{ color: "#f2c94c", step: true, area: true, pts: price }], { unit: "kr/kWh", d: 2, t0: now - 6 * 3600e3, t1: end, h: 150 }));
+    const rows = seg.map((g) => '<div class="ev" style="border-left-color:' + (sCol[g.strat] || "#888") + '"><div class="ev-t">' + this._hm(g.start) + "–" + this._hm(g.end) + " · " + sName(g.strat) + '</div><div class="ev-d">målnivå ' + this._n(g.t0, 0) + (Math.round(g.t1) !== Math.round(g.t0) ? " → " + this._n(g.t1, 0) : "") + " %" + (g.feed ? " · försäljning tillåten" : "") + "</div></div>").join("");
+    const note = '<div class="d-note" style="margin-top:8px">Strategierna är de som DESS schemalagt i GX-enheten. Exakt hur mycket som köps eller säljs per period beslutas löpande av systemet.</div>';
+    return { tiles: hdr, charts, extra: '<div class="d-ct">Planen i klartext</div>' + rows + note };
   }
   _dTab_mp(d) {
     const n = (k) => this._num(k, null), kw = (k) => { const v = n(k); return v == null ? null : v / 1000; };
