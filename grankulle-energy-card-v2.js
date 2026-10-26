@@ -84,6 +84,10 @@ const DEFAULT_ENTITIES = {
   dc_discharge_energy: "sensor.kallare_gx_device_dc_batteri_urladdningsenergi",
 
   weather_temp: "sensor.st_00150138_temperatur",
+  weather_wind: "sensor.st_00150138_genomsnittlig_vindhastighet",
+  weather_gust: "sensor.st_00150138_vindby",
+  weather_wind_dir: "sensor.st_00150138_vindriktning",
+  weather_pressure: "sensor.st_00150138_lufttryck",
   weather_humidity: "sensor.st_00150138_luftfuktighet",
   weather_uv: "sensor.st_00150138_uv_index",
   weather_rain_today: "sensor.st_00150138_nederbord",
@@ -197,7 +201,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             <div class="sub">ENERGI · HEM · VÄDER · TRÄDGÅRD</div>
           </div>
           <div class="topright">
-            <div class="wind-box" title="Vind just nu">
+            <div class="wind-box" title="Vind just nu – klicka för historik" data-action="detail-open" data-tab="vader" style="cursor:pointer">
               <svg viewBox="0 0 100 100" class="compass">
                 <circle cx="50" cy="50" r="42" fill="none" stroke="#ffffff55" stroke-width="3"/>
                 <text x="50" y="22" text-anchor="middle" font-size="16" fill="#ffffffaa">N</text>
@@ -655,7 +659,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _detailTabs() {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
-      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "mp", t: "🔌 Multiplus" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" },
     ];
   }
   _openDetail(tab) {
@@ -685,9 +689,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (c[range] && now - c[range].at < 60000) { this._dData = c[range].d; this._renderDetail(); return; }
     try {
       const span = range === "24h" ? 24 * 3600e3 : 7 * 24 * 3600e3, per = range === "24h" ? "5minute" : "hour";
-      const keys = ["fronius_power", "house_power_l1", "house_power_l2", "house_power_l3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "battery_power", "battery_soc", "zaptec_power", "tibber_price", "dc_charge_energy", "dc_discharge_energy", "mp_dc_p", "mp_in_p1", "mp_in_p2", "mp_in_p3", "mp_out_p1", "mp_out_p2", "mp_out_p3"];
+      const keys = ["fronius_power", "house_power_l1", "house_power_l2", "house_power_l3", "grid_power_l1", "grid_power_l2", "grid_power_l3", "battery_power", "battery_soc", "zaptec_power", "tibber_price", "dc_charge_energy", "dc_discharge_energy", "mp_dc_p", "mp_in_p1", "mp_in_p2", "mp_in_p3", "mp_out_p1", "mp_out_p2", "mp_out_p3", "weather_temp", "coop_temp", "weather_wind", "weather_gust", "weather_wind_dir", "weather_pressure"];
       const ids = keys.map((k) => this._e(k)).filter(Boolean);
-      const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(now - span).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: ids, period: per, types: ["mean", "change"] });
+      const st = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(now - span).toISOString(), end_time: new Date(now).toISOString(), statistic_ids: ids, period: per, types: ["mean", "change", "max"] });
+      const wu = this._st("weather_wind"), wunit = wu && wu.attributes ? String(wu.attributes.unit_of_measurement || "") : "";
+      const windF = /km/i.test(wunit) ? 1 / 3.6 : /mph/i.test(wunit) ? 0.44704 : /kn/i.test(wunit) ? 0.5144 : 1;
       const rows = (k, f, field) => ((st[this._e(k)] || []).map((r) => ({ t: typeof r.start === "number" ? r.start : Date.parse(r.start), v: r[field || "mean"] == null ? null : r[field || "mean"] * (f || 1) })));
       const sum = (ks, f) => {
         const m = {};
@@ -708,6 +714,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         mpin: sum(["mp_in_p1", "mp_in_p2", "mp_in_p3"], 0.001), mpout: sum(["mp_out_p1", "mp_out_p2", "mp_out_p3"], 0.001),
         mpo1: rows("mp_out_p1", 0.001).filter((r) => r.v != null), mpo2: rows("mp_out_p2", 0.001).filter((r) => r.v != null), mpo3: rows("mp_out_p3", 0.001).filter((r) => r.v != null),
         mpdc: rows("mp_dc_p", 0.001).filter((r) => r.v != null),
+        wtemp: rows("weather_temp").filter((r) => r.v != null), wcoop: rows("coop_temp").filter((r) => r.v != null),
+        wwind: rows("weather_wind", windF).filter((r) => r.v != null), wgust: rows("weather_gust", windF).filter((r) => r.v != null),
+        wgustMax: rows("weather_gust", windF, "max").filter((r) => r.v != null),
+        wdir: rows("weather_wind_dir").filter((r) => r.v != null), wpres: rows("weather_pressure").filter((r) => r.v != null),
         chg: rows("dc_charge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
         dis: rows("dc_discharge_energy", 1, "change").reduce((a, r) => a + Math.max(0, r.v || 0), 0),
       };
@@ -1072,6 +1082,42 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const rows = seg.map((g) => '<div class="ev" style="border-left-color:' + (sCol[g.strat] || "#888") + '"><div class="ev-t">' + this._hm(g.start) + "–" + this._hm(g.end) + " · " + sName(g.strat) + '</div><div class="ev-d">målnivå ' + this._n(g.t0, 0) + (Math.round(g.t1) !== Math.round(g.t0) ? " → " + this._n(g.t1, 0) : "") + " %" + (g.feed ? " · försäljning tillåten" : "") + "</div></div>").join("");
     const note = '<div class="d-note" style="margin-top:8px">Strategierna är de som DESS schemalagt i GX-enheten. Exakt hur mycket som köps eller säljs per period beslutas löpande av systemet.</div>';
     return { tiles: hdr, charts, extra: '<div class="d-ct">Planen i klartext</div>' + rows + note };
+  }
+  _dTab_vader(d) {
+    const dirTxt = (deg) => deg == null ? "–" : ["N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO", "S", "SSV", "SV", "VSV", "V", "VNV", "NV", "NNV"][Math.round(deg / 22.5) % 16];
+    const wu = this._st("weather_wind"), wunit = wu && wu.attributes ? String(wu.attributes.unit_of_measurement || "") : "";
+    const f = /km/i.test(wunit) ? 1 / 3.6 : /mph/i.test(wunit) ? 0.44704 : /kn/i.test(wunit) ? 0.5144 : 1;
+    const nowW = this._num("weather_wind"), nowG = this._num("weather_gust"), dir = this._num("weather_wind_dir"), tNow = this._num("weather_temp"), pNow = this._num("weather_pressure");
+    const wavg = d.wwind.length ? d.wwind.reduce((a, r) => a + r.v, 0) / d.wwind.length : null;
+    const gmax = d.wgustMax && d.wgustMax.length ? this._peak(d.wgustMax) : this._peak(d.wgust);
+    const wmax = this._peak(d.wwind);
+    // circular mean of the wind direction, weighted by wind speed
+    let sx = 0, sy = 0; d.wdir.forEach((r) => { const w = (d.wwind.find((x) => x.t === r.t) || { v: 1 }).v, a = r.v * Math.PI / 180; sx += w * Math.sin(a); sy += w * Math.cos(a); });
+    const mdir = d.wdir.length ? (Math.atan2(sx, sy) * 180 / Math.PI + 360) % 360 : null;
+    const tmin = d.wtemp.length ? d.wtemp.reduce((b, r) => (r.v < b.v ? r : b)) : null, tmax = d.wtemp.length ? d.wtemp.reduce((b, r) => (r.v > b.v ? r : b)) : null;
+    const tavg = d.wtemp.length ? d.wtemp.reduce((a, r) => a + r.v, 0) / d.wtemp.length : null;
+    const p0 = d.wpres.length ? d.wpres[0].v : null, ptr = pNow != null && p0 != null ? pNow - p0 : null;
+    const ms = (v) => this._n(v == null ? null : v * f, 1) + " m/s";
+    const pr = d.wpres.map((r) => r.v);
+    const pLo = pr.length ? Math.floor(Math.min.apply(null, pr) - 1) : 990, pHi = pr.length ? Math.ceil(Math.max.apply(null, pr) + 1) : 1030;
+    return {
+      tiles: [
+        this._tile("Vind nu", ms(nowW), dir != null ? dirTxt(dir) + " " + Math.round(dir) + "°" : ""),
+        this._tile("Byvind nu", ms(nowG)),
+        this._tile("Högsta byvind " + this._rng(), gmax ? this._n(gmax.v, 1) + " m/s" : "–", gmax ? this._dayHm(gmax.t) : ""),
+        this._tile("Medelvind " + this._rng(), this._n(wavg, 1) + " m/s", wmax ? "mest " + this._n(wmax.v, 1) + " m/s (timmedel) " + this._dayHm(wmax.t) : ""),
+        this._tile("Vanligaste riktning", mdir != null ? dirTxt(mdir) + " " + Math.round(mdir) + "°" : "–", "viktad efter vindstyrka"),
+        this._tile("Temperatur nu", this._n(tNow, 1) + " °C", d.wtemp.length ? "snitt " + this._n(tavg, 1) + " °C" : ""),
+        this._tile("Lägst", tmin ? this._n(tmin.v, 1) + " °C" : "–", tmin ? this._dayHm(tmin.t) : ""),
+        this._tile("Högst", tmax ? this._n(tmax.v, 1) + " °C" : "–", tmax ? this._dayHm(tmax.t) : ""),
+        this._tile("Lufttryck", pNow != null ? this._n(pNow, 0) + " hPa" : "–", ptr != null ? (ptr >= 0 ? "+" : "") + this._n(ptr, 1) + " hPa under perioden" : ""),
+      ],
+      charts: [
+        this._dChart("Vind (m/s)", [{ name: "Medelvind", color: "#5ab0ff", pts: d.wwind, area: true }, { name: "Byvind (max)", color: "#ff9f43", pts: d.wgustMax && d.wgustMax.length ? d.wgustMax : d.wgust }], { unit: "m/s", d: 1 }),
+        this._dChart("Temperatur (°C)", [{ name: "Väderstation", color: "#ff7a59", pts: d.wtemp }].concat(d.wcoop.length ? [{ name: "Hönshus", color: "#3ddc84", pts: d.wcoop }] : []), { unit: "°C", d: 1, min: d.wtemp.length ? Math.floor(Math.min.apply(null, d.wtemp.concat(d.wcoop).map((r) => r.v)) - 1) : undefined, max: d.wtemp.length ? Math.ceil(Math.max.apply(null, d.wtemp.concat(d.wcoop).map((r) => r.v)) + 1) : undefined }),
+        this._dChart("Lufttryck (hPa)", [{ color: "#4dd0e1", pts: d.wpres }], { unit: "hPa", d: 0, min: pLo, max: pHi, h: 170 }),
+      ],
+    };
   }
   _dTab_mp(d) {
     const n = (k) => this._num(k, null), kw = (k) => { const v = n(k); return v == null ? null : v / 1000; };
