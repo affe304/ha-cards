@@ -1114,7 +1114,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         ...(d.wcoop.length || this._num("coop_temp") != null ? (() => {
           const cn = this._num("coop_temp"), cmin = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v < b.v ? r : b)) : null, cmax = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v > b.v ? r : b)) : null;
           return [
-            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", cn != null && tNow != null ? (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute" : ""),
+            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : ""),
             this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) : ""),
             this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) : ""),
           ];
