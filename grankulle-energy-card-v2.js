@@ -112,6 +112,9 @@ const DEFAULT_ENTITIES = {
   zaptec_btn_stop: "button.zaptec_stoppa_laddning",
   zaptec_mode: "input_select.zaptec_ev_mode",
   ess_min_soc: "number.kallare_gx_device_ess_minsta_soc_grans",
+  frame_player: "media_player.65_the_frame_tq65ls03fauxxc",   // Samsung The Frame (samsungtv)
+  frame_remote: "remote.65_the_frame_tq65ls03fauxxc",
+  frame_cast: "media_player.the_frame",                        // same TV as a Cast target (used to show the dashboard)
   dess_mode_sw: "switch.dynamic_ess_operating_mode_tillstand",   // virtual Node-RED switch: on = Trade, off = Green
   vma_count: "sensor.vma_halland",
   vma_headline: "sensor.vma_halland_rubrik",
@@ -383,6 +386,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
               <h4>Shelly 1</h4>
               <div class="crow"><button class="cbtn" id="c-shelly1" data-action="toggle-shelly1">–</button></div>
             </section>
+            <section id="c-frame-sec">
+              <h4>The Frame</h4>
+              <div class="cstat" id="c-frame-status">–</div>
+              <div class="crow">
+                <button class="cbtn" data-action="frame" data-do="art" title="Växla till Art mode">Art mode</button>
+                <button class="cbtn" data-action="frame" data-do="off" title="Håll in strömknappen: stänger av helt">Helt av</button>
+                <button class="cbtn" data-action="frame" data-do="on">På</button>
+                <button class="cbtn" data-action="frame" data-do="dash" title="Visa denna dashboard på TV:n (Cast)">Visa dashboard</button>
+              </div>
+            </section>
             <section>
               <h4>Husbatteri</h4>
               <div class="crow"><button class="cbtn" id="c-battfull" data-action="batt-full">–</button></div>
@@ -424,6 +437,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "v60-heat-on") this._v60Heat(true);
       else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "batt-full") this._battFull();
+      else if (a === "frame") this._frame(t.dataset.do);
       else if (a === "dess-mode") this._svc("switch", t.dataset.mode === "trade" ? "turn_on" : "turn_off", "dess_mode_sw");
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
@@ -1379,6 +1393,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     } catch (e) { if (cur !== null && cur >= 99) target = 29; }
     this._hass.callService("number", "set_value", { entity_id: id, value: target });
   }
+  // Samsung The Frame: turn_off on a Frame = Art mode, a held power key = fully off; the dashboard is cast with Home Assistant's Cast "show view"
+  _frame(what) {
+    if (!this._hass) return;
+    if (what === "art") this._svc("media_player", "turn_off", "frame_player");
+    else if (what === "on") this._svc("media_player", "turn_on", "frame_player");
+    else if (what === "off") this._svc("remote", "send_command", "frame_remote", { command: ["KEY_POWER"], hold_secs: 4 });
+    else if (what === "dash") this._svc("cast", "show_lovelace_view", "frame_cast", { view_path: "0", dashboard_path: "dashboard-v2" });
+  }
   _select(key, option) {
     this._svc("input_select", "select_option", key, { option });
   }
@@ -1499,6 +1521,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (bf) { bf.textContent = lim === null ? "ej tillgänglig" : full ? "Håller fulladdat (tryck för normal)" : "Ladda fullt";
       bf.title = lim === null ? "" : "ESS minsta SoC-gräns: " + Math.round(lim) + " %"; bf.classList.toggle("active", full); }
 
+    const fp = this._st("frame_player"), fsec = this.shadowRoot.getElementById("c-frame-sec");
+    if (fsec) { fsec.style.display = fp ? "" : "none"; this._set("c-frame-status", fp ? (fp.state === "on" ? "Ansluten (på / Art mode)" : fp.state === "off" ? "Avstängd" : "ej tillgänglig") : "–"); }
     const dm = this._st("dess_mode_sw");
     this._markActive("c-dess", "mode", dm ? (dm.state === "on" ? "trade" : dm.state === "off" ? "green" : "") : "");
     const dc = this.shadowRoot.getElementById("c-dess"); if (dc) dc.style.display = dm ? "" : "none";
