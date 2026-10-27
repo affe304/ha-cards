@@ -397,6 +397,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
                 <button class="cbtn" data-action="frame" data-do="off" title="Håll in strömknappen: stänger av helt">Helt av</button>
                 <button class="cbtn" data-action="frame" data-do="on">På</button>
                 <button class="cbtn" data-action="frame" data-do="dash" title="Visa denna dashboard på TV:n (Cast)">Visa dashboard</button>
+                <button class="cbtn" data-action="detail-open" data-tab="frame" title="Alla reglage: volym, källa, fjärrkontroll">Alla reglage ▸</button>
               </div>
             </section>
             <section>
@@ -441,10 +442,20 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "batt-full") this._battFull();
       else if (a === "frame") this._frame(t.dataset.do);
+      else if (a === "frame-key") this._frameKey(t.dataset.key, t.dataset.hold);
+      else if (a === "frame-src") { this._svc("media_player", "select_source", "frame_player", { source: t.dataset.src }); this._frameRefresh(); }
+      else if (a === "frame-vol") { this._svc("media_player", t.dataset.d === "up" ? "volume_up" : "volume_down", "frame_player"); this._frameRefresh(); }
+      else if (a === "frame-mute") { const fp = this._st("frame_player"); this._svc("media_player", "volume_mute", "frame_player", { is_volume_muted: !(fp && fp.attributes.is_volume_muted) }); this._frameRefresh(); }
+      else if (a === "frame-media") { this._svc("media_player", t.dataset.do, "frame_player"); this._frameRefresh(); }
       else if (a === "dess-mode") this._svc("switch", t.dataset.mode === "trade" ? "turn_on" : "turn_off", "dess_mode_sw");
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
+    const detEl0 = this.shadowRoot.getElementById("detail");
+    if (detEl0) {
+      detEl0.addEventListener("input", (ev) => { const t = ev.target; if (t && t.dataset && t.dataset.action === "frame-vol-set") { this._frameBusy = Date.now(); const o = this.shadowRoot.getElementById("fr-vol-n"); if (o) o.textContent = t.value + " %"; } });
+      detEl0.addEventListener("change", (ev) => { const t = ev.target; if (t && t.dataset && t.dataset.action === "frame-vol-set") { this._svc("media_player", "volume_set", "frame_player", { volume_level: parseInt(t.value, 10) / 100 }); this._frameBusy = 0; this._frameRefresh(); } });
+    }
     // back to the main view 30 s after the last touch/mouse/scroll/key in the detail window
     const detEl = this.shadowRoot.getElementById("detail");
     if (detEl) ["pointerdown", "pointermove", "touchstart", "touchmove", "wheel", "scroll", "keydown", "click"].forEach((n) => detEl.addEventListener(n, () => this._idleReset(), { capture: true, passive: true }));
@@ -682,7 +693,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
       { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" },
-    ];
+    ].concat(this._st("frame_player") ? [{ k: "frame", t: "📺 The Frame" }] : []);
   }
   _openDetail(tab) {
     this._dTab = tab || this._dTab || "sol";
@@ -874,6 +885,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!body || root.getElementById("detail").style.display === "none") return;
     root.getElementById("d-tabs").innerHTML = this._detailTabs().map((t) => '<button class="d-tab' + (t.k === this._dTab ? " on" : "") + '" data-action="detail-tab" data-tab="' + t.k + '">' + t.t + "</button>").join("");
     root.getElementById("d-range").innerHTML = [["24h", "24 tim"], ["7d", "7 dygn"]].map((r) => '<button class="d-rb' + (r[0] === this._dRange ? " on" : "") + '" data-action="detail-range" data-range="' + r[0] + '">' + r[1] + "</button>").join("");
+    const rg = root.getElementById("d-range"); if (rg) rg.style.display = this._dTab === "frame" ? "none" : "";
+    if (this._dTab === "frame") {
+      if (this._frameBusy && Date.now() - this._frameBusy < 4000) return;
+      const sc = body.scrollTop, fo = this._dTab_frame();
+      body.innerHTML = '<div class="d-tiles">' + fo.tiles.join("") + "</div>" + fo.extra;
+      body.scrollTop = sc;
+      return;
+    }
     const d = this._dData;
     if (!d || d.range !== this._dRange) { body.innerHTML = '<div class="d-empty">Hämtar data…</div>'; return; }
     if (d.error) { body.innerHTML = '<div class="d-empty">Kunde inte hämta historik från Home Assistant.</div>'; return; }
@@ -1440,6 +1459,44 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     else if (what === "on") this._svc("media_player", "turn_on", "frame_player");
     else if (what === "off") this._svc("remote", "send_command", "frame_remote", { command: ["KEY_POWER"], hold_secs: 4 });
     else if (what === "dash") this._svc("cast", "show_lovelace_view", "frame_cast", { view_path: "0", dashboard_path: "dashboard-v2" });
+  }
+  _frameKey(key, hold) {
+    if (!this._hass || !key) return;
+    const data = { command: [key] };
+    if (hold) data.hold_secs = parseFloat(hold);
+    this._svc("remote", "send_command", "frame_remote", data);
+  }
+  _frameRefresh() { clearTimeout(this._frameRt); this._frameRt = setTimeout(() => { if (this._dTab === "frame") this._renderDetail(); }, 900); }
+  _dTab_frame() {
+    const fp = this._st("frame_player"), a = (fp && fp.attributes) || {};
+    const state = !fp ? "–" : fp.state === "on" ? "På / Art mode" : fp.state === "off" ? "Avstängd / standby" : "Ej tillgänglig";
+    const vol = a.volume_level != null ? Math.round(a.volume_level * 100) : null;
+    const k = (key, label, cls, hold) => '<button class="fr-b ' + (cls || "") + '" data-action="frame-key" data-key="' + key + '"' + (hold ? ' data-hold="' + hold + '"' : "") + ">" + label + "</button>";
+    const srcs = (a.source_list || []).map((x) => '<button class="fr-b' + (a.source === x ? " on" : "") + '" data-action="frame-src" data-src="' + x + '">' + x + "</button>").join("");
+    const out = '<div class="fr-wrap">' +
+      '<div class="fr-card"><div class="d-ct">Ström och läge</div><div class="fr-row">' +
+        '<button class="fr-b" data-action="frame" data-do="art">🖼 Art mode</button>' +
+        '<button class="fr-b" data-action="frame" data-do="on">⏻ På</button>' +
+        '<button class="fr-b warn" data-action="frame" data-do="off">⏼ Helt av</button>' +
+      '</div><div class="d-note">Art mode = TV:n vilar och visar konst. Helt av = håller in strömknappen i 4 s.</div></div>' +
+      '<div class="fr-card"><div class="d-ct">Volym <span class="d-note" id="fr-vol-n">' + (vol != null ? vol + " %" : "–") + (a.is_volume_muted ? " · ljud av" : "") + '</span></div>' +
+        '<div class="fr-row"><button class="fr-b" data-action="frame-vol" data-d="down">−</button>' +
+        '<input class="fr-range" type="range" min="0" max="100" step="1" value="' + (vol != null ? vol : 0) + '" data-action="frame-vol-set">' +
+        '<button class="fr-b" data-action="frame-vol" data-d="up">+</button>' +
+        '<button class="fr-b' + (a.is_volume_muted ? " on" : "") + '" data-action="frame-mute">🔇 Ljud av</button></div></div>' +
+      '<div class="fr-card"><div class="d-ct">Källa</div><div class="fr-row">' + (srcs || '<span class="d-note">Inga källor rapporterade (TV:n är avstängd)</span>') + k("KEY_SOURCE", "Källmeny") + "</div></div>" +
+      '<div class="fr-card"><div class="d-ct">Fjärrkontroll</div><div class="fr-remote">' +
+        '<div class="fr-dpad">' + k("KEY_UP", "▲", "u") + k("KEY_LEFT", "◀", "l") + k("KEY_ENTER", "OK", "ok") + k("KEY_RIGHT", "▶", "r") + k("KEY_DOWN", "▼", "d") + "</div>" +
+        '<div class="fr-keys">' + k("KEY_RETURN", "↩ Tillbaka") + k("KEY_HOME", "🏠 Hem") + k("KEY_MENU", "☰ Meny") + k("KEY_INFO", "ℹ Info") + k("KEY_EXIT", "✕ Avsluta") + k("KEY_TOOLS", "🔧 Verktyg") +
+        k("KEY_CHUP", "CH ▲") + k("KEY_CHDOWN", "CH ▼") + k("KEY_GUIDE", "📅 Guide") + "</div></div>" +
+        '<div class="fr-row" style="margin-top:10px">' + k("KEY_REWIND", "⏪") + k("KEY_PLAY", "▶") + k("KEY_PAUSE", "⏸") + k("KEY_STOP", "⏹") + k("KEY_FF", "⏩") + "</div></div>" +
+      '<div class="fr-card"><div class="d-ct">Siffror</div><div class="fr-row">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((n) => k("KEY_" + n, String(n))).join("") + "</div></div>" +
+      '<div class="d-note" style="margin-top:8px">Knapparna skickas som fjärrkontrollstryck via Samsung-integrationen. TV:n måste vara på (inte helt avstängd) för att ta emot dem. Konstbibliotek och bildväxling går inte att styra härifrån.</div>' +
+      "</div>";
+    return { tiles: [
+      this._tile("Läge", state, a.source ? "källa: " + a.source : ""),
+      this._tile("Volym", vol != null ? vol + " %" : "–", a.is_volume_muted ? "ljud av" : ""),
+    ], charts: [], extra: out };
   }
   _select(key, option) {
     this._svc("input_select", "select_option", key, { option });
@@ -2131,6 +2188,20 @@ const STYLE = `
   .d-ts { font-size: 12px; opacity: 0.75; margin-top: 2px; }
   .d-ct { font-size: 13px; font-weight: 700; margin: 10px 0 4px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .d-note { font-weight: 400; opacity: 0.6; font-size: 11px; }
+  .fr-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .fr-card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 10px 12px; }
+  .fr-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+  .fr-b { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; min-width: 52px; min-height: 48px; padding: 8px 14px; font-size: 16px; font-family: inherit; cursor: pointer; touch-action: manipulation; }
+  .fr-b:active { background: #2e7d5b; }
+  .fr-b.on { background: #2e7d5b; border-color: #3ddc84; font-weight: 700; }
+  .fr-b.warn { border-color: #ff7a59; }
+  .fr-range { flex: 1 1 140px; min-width: 120px; height: 36px; accent-color: #3ddc84; }
+  .fr-remote { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .fr-dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 6px; grid-template-areas: ". u ." "l ok r" ". d ."; }
+  .fr-dpad .fr-b { min-width: 0; min-height: 0; padding: 0; font-size: 18px; }
+  .fr-dpad .u { grid-area: u; } .fr-dpad .d { grid-area: d; } .fr-dpad .l { grid-area: l; } .fr-dpad .r { grid-area: r; } .fr-dpad .ok { grid-area: ok; font-weight: 800; }
+  .fr-keys { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 160px; }
+  .fr-keys .fr-b { min-height: 44px; font-size: 14px; padding: 6px 10px; }
   .d-leg { display: flex; gap: 12px; font-weight: 400; font-size: 12px; opacity: 0.9; }
   .d-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
   .d-chart { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
