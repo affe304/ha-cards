@@ -445,6 +445,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
+    // back to the main view 30 s after the last touch/mouse/scroll/key in the detail window
+    const detEl = this.shadowRoot.getElementById("detail");
+    if (detEl) ["pointerdown", "pointermove", "touchstart", "touchmove", "wheel", "scroll", "keydown", "click"].forEach((n) => detEl.addEventListener(n, () => this._idleReset(), { capture: true, passive: true }));
+
     if (!window.__grankulleEsc) { window.__grankulleEsc = true; document.addEventListener("keydown", (e) => { if (e.key === "Escape" && window.__grankulleCard) window.__grankulleCard._closeDetail(); }); }
     window.__grankulleCard = this;
     const pcBars = this.shadowRoot.getElementById("pc-bars");
@@ -686,6 +690,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const o = this.shadowRoot.getElementById("detail");
     if (!o) return;
     o.style.display = "flex";
+    this._idleReset();
     this._renderDetail();
     this._loadDetail();
     if (this._dTab === "plan") this._loadPlan();
@@ -694,10 +699,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     clearInterval(this._dLoad);
     this._dLoad = setInterval(() => { this._loadDetail(); if (this._dTab === "plan") this._loadPlan(); }, 90000);
   }
+  _idleReset() {
+    clearTimeout(this._dIdle);
+    const o = this.shadowRoot && this.shadowRoot.getElementById("detail");
+    if (!o || o.style.display === "none") return;
+    this._dIdle = setTimeout(() => this._closeDetail(), this._idleMs || 30000);
+  }
   _closeDetail() {
     const o = this.shadowRoot.getElementById("detail");
     if (o) o.style.display = "none";
-    clearInterval(this._dTimer); clearInterval(this._dLoad);
+    clearInterval(this._dTimer); clearInterval(this._dLoad); clearTimeout(this._dIdle);
   }
   async _loadDetail() {
     if (!this._hass || !this._hass.callWS) return;
@@ -835,12 +846,28 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         tip.innerHTML = "<b>" + this._dayHm(t) + "</b><br>" + (lines.join("<br>") || "–");
         tip.style.display = "block";
         const w = tip.offsetWidth, px = fx * r.width;
-        tip.style.left = Math.min(Math.max(px - w / 2, 0), r.width - w) + "px";
+        if (ev.pointerType === "touch") {
+          // beside the finger (never under it): to the right if there is room, otherwise to the left
+          tip.style.left = Math.min(Math.max(px + 28 + w <= r.width ? px + 28 : px - 28 - w, 0), Math.max(0, r.width - w)) + "px";
+        } else tip.style.left = Math.min(Math.max(px - w / 2, 0), r.width - w) + "px";
       };
       el.addEventListener("pointermove", move);
-      el.addEventListener("pointerdown", move);
-      el.addEventListener("pointerleave", () => { guide.style.display = "none"; tip.style.display = "none"; });
+      el.addEventListener("pointerdown", (ev) => {
+        // only one chart shows its value box at a time
+        this.shadowRoot.querySelectorAll(".d-chart").forEach((o) => { if (o !== el) { const g2 = o.querySelector(".d-guide"), t2 = o.querySelector(".d-tip"); if (g2) g2.style.display = "none"; if (t2) t2.style.display = "none"; } });
+        move(ev);
+      });
+      // with a finger the value box stays after lifting; it goes away when tapping outside the charts
+      el.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "touch") return; guide.style.display = "none"; tip.style.display = "none"; });
     });
+    const bodyEl = this.shadowRoot.getElementById("d-body");
+    if (bodyEl && !this._tipOutside) {
+      this._tipOutside = true;
+      this.shadowRoot.addEventListener("pointerdown", (ev) => {
+        if (ev.target && ev.target.closest && ev.target.closest(".d-chart")) return;
+        this.shadowRoot.querySelectorAll(".d-chart .d-guide, .d-chart .d-tip").forEach((n) => { n.style.display = "none"; });
+      });
+    }
   }
   _renderDetail() {
     const root = this.shadowRoot, body = root.getElementById("d-body");
@@ -2106,7 +2133,7 @@ const STYLE = `
   .d-note { font-weight: 400; opacity: 0.6; font-size: 11px; }
   .d-leg { display: flex; gap: 12px; font-weight: 400; font-size: 12px; opacity: 0.9; }
   .d-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
-  .d-chart { position: relative; touch-action: pan-y; }
+  .d-chart { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   .d-chart svg { width: 100%; height: auto; display: block; }
   .d-grid { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
   .d-grid.v { stroke: rgba(255,255,255,0.07); }
