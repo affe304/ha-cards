@@ -1130,10 +1130,15 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._tile("Högst", tmax ? this._n(tmax.v, 1) + " °C" : "–", tmax ? this._dayHm(tmax.t) : ""),
         ...(d.wcoop.length || this._num("coop_temp") != null ? (() => {
           const cn = this._num("coop_temp"), cmin = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v < b.v ? r : b)) : null, cmax = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v > b.v ? r : b)) : null;
+          const outAt = (r) => {
+            if (!r || !d.wtemp.length) return "";
+            const o = d.wtemp.reduce((b, x) => (Math.abs(x.t - r.t) < Math.abs(b.t - r.t) ? x : b));
+            return Math.abs(o.t - r.t) > 2 * 3600e3 ? "" : '<br><span style="color:#ff5a5a;font-weight:700">ute ' + this._n(o.v, 1) + " °C</span>";
+          };
           return [
             this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : ""),
-            this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) : ""),
-            this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) : ""),
+            this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) + outAt(cmin) : ""),
+            this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) + outAt(cmax) : ""),
           ];
         })() : []),
         this._tile("Lufttryck", pNow != null ? this._n(pNow, 0) + " hPa" : "–", ptr != null ? (ptr >= 0 ? "+" : "") + this._n(ptr, 1) + " hPa under perioden" : ""),
