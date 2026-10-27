@@ -444,18 +444,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "frame") this._frame(t.dataset.do);
       else if (a === "frame-key") this._frameKey(t.dataset.key, t.dataset.hold);
       else if (a === "frame-src") { this._svc("media_player", "select_source", "frame_player", { source: t.dataset.src }); this._frameRefresh(); }
-      else if (a === "frame-vol") { this._svc("media_player", t.dataset.d === "up" ? "volume_up" : "volume_down", "frame_player"); this._frameRefresh(); }
-      else if (a === "frame-mute") { const fp = this._st("frame_player"); this._svc("media_player", "volume_mute", "frame_player", { is_volume_muted: !(fp && fp.attributes.is_volume_muted) }); this._frameRefresh(); }
+      else if (a === "frame-vol") this._svc("remote", "send_command", "frame_remote", { command: [t.dataset.d === "up" ? "KEY_VOLUP" : "KEY_VOLDOWN"], num_repeats: parseInt(t.dataset.n || "1", 10), delay_secs: 0.15 });
+      else if (a === "frame-mute") this._frameKey("KEY_MUTE");
       else if (a === "frame-media") { this._svc("media_player", t.dataset.do, "frame_player"); this._frameRefresh(); }
       else if (a === "dess-mode") this._svc("switch", t.dataset.mode === "trade" ? "turn_on" : "turn_off", "dess_mode_sw");
       else if (a === "toggle-hose") this._setValve(this._valveIsOn() ? 0 : 30);
     });
 
-    const detEl0 = this.shadowRoot.getElementById("detail");
-    if (detEl0) {
-      detEl0.addEventListener("input", (ev) => { const t = ev.target; if (t && t.dataset && t.dataset.action === "frame-vol-set") { this._frameBusy = Date.now(); const o = this.shadowRoot.getElementById("fr-vol-n"); if (o) o.textContent = t.value + " %"; } });
-      detEl0.addEventListener("change", (ev) => { const t = ev.target; if (t && t.dataset && t.dataset.action === "frame-vol-set") { this._svc("media_player", "volume_set", "frame_player", { volume_level: parseInt(t.value, 10) / 100 }); this._frameBusy = 0; this._frameRefresh(); } });
-    }
     // back to the main view 30 s after the last touch/mouse/scroll/key in the detail window
     const detEl = this.shadowRoot.getElementById("detail");
     if (detEl) ["pointerdown", "pointermove", "touchstart", "touchmove", "wheel", "scroll", "keydown", "click"].forEach((n) => detEl.addEventListener(n, () => this._idleReset(), { capture: true, passive: true }));
@@ -1470,7 +1465,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _dTab_frame() {
     const fp = this._st("frame_player"), a = (fp && fp.attributes) || {};
     const state = !fp ? "–" : fp.state === "on" ? "På / Art mode" : fp.state === "off" ? "Avstängd / standby" : "Ej tillgänglig";
-    const vol = a.volume_level != null ? Math.round(a.volume_level * 100) : null;
     const k = (key, label, cls, hold) => '<button class="fr-b ' + (cls || "") + '" data-action="frame-key" data-key="' + key + '"' + (hold ? ' data-hold="' + hold + '"' : "") + ">" + label + "</button>";
     const srcs = (a.source_list || []).map((x) => '<button class="fr-b' + (a.source === x ? " on" : "") + '" data-action="frame-src" data-src="' + x + '">' + x + "</button>").join("");
     const out = '<div class="fr-wrap">' +
@@ -1479,11 +1473,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         '<button class="fr-b" data-action="frame" data-do="on">⏻ På</button>' +
         '<button class="fr-b warn" data-action="frame" data-do="off">⏼ Helt av</button>' +
       '</div><div class="d-note">Art mode = TV:n vilar och visar konst. Helt av = håller in strömknappen i 4 s.</div></div>' +
-      '<div class="fr-card"><div class="d-ct">Volym <span class="d-note" id="fr-vol-n">' + (vol != null ? vol + " %" : "–") + (a.is_volume_muted ? " · ljud av" : "") + '</span></div>' +
-        '<div class="fr-row"><button class="fr-b" data-action="frame-vol" data-d="down">−</button>' +
-        '<input class="fr-range" type="range" min="0" max="100" step="1" value="' + (vol != null ? vol : 0) + '" data-action="frame-vol-set">' +
-        '<button class="fr-b" data-action="frame-vol" data-d="up">+</button>' +
-        '<button class="fr-b' + (a.is_volume_muted ? " on" : "") + '" data-action="frame-mute">🔇 Ljud av</button></div></div>' +
+      '<div class="fr-card"><div class="d-ct">Volym <span class="d-note">skickas som fjärrkontrollstryck, nivån kan inte läsas av</span></div>' +
+        '<div class="fr-row"><button class="fr-b big" data-action="frame-vol" data-d="down" data-n="5">−−</button><button class="fr-b big" data-action="frame-vol" data-d="down">−</button>' +
+        '<button class="fr-b big" data-action="frame-vol" data-d="up">+</button><button class="fr-b big" data-action="frame-vol" data-d="up" data-n="5">++</button>' +
+        '<button class="fr-b" data-action="frame-mute">🔇 Ljud av/på</button></div><div class="d-note">−− och ++ ändrar fem steg.</div></div>' +
       '<div class="fr-card"><div class="d-ct">Källa</div><div class="fr-row">' + (srcs || '<span class="d-note">Inga källor rapporterade (TV:n är avstängd)</span>') + k("KEY_SOURCE", "Källmeny") + "</div></div>" +
       '<div class="fr-card"><div class="d-ct">Fjärrkontroll</div><div class="fr-remote">' +
         '<div class="fr-dpad">' + k("KEY_UP", "▲", "u") + k("KEY_LEFT", "◀", "l") + k("KEY_ENTER", "OK", "ok") + k("KEY_RIGHT", "▶", "r") + k("KEY_DOWN", "▼", "d") + "</div>" +
@@ -1495,7 +1488,6 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       "</div>";
     return { tiles: [
       this._tile("Läge", state, a.source ? "källa: " + a.source : ""),
-      this._tile("Volym", vol != null ? vol + " %" : "–", a.is_volume_muted ? "ljud av" : ""),
     ], charts: [], extra: out };
   }
   _select(key, option) {
@@ -2195,7 +2187,7 @@ const STYLE = `
   .fr-b:active { background: #2e7d5b; }
   .fr-b.on { background: #2e7d5b; border-color: #3ddc84; font-weight: 700; }
   .fr-b.warn { border-color: #ff7a59; }
-  .fr-range { flex: 1 1 140px; min-width: 120px; height: 36px; accent-color: #3ddc84; }
+  .fr-b.big { min-width: 64px; font-size: 22px; font-weight: 800; }
   .fr-remote { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
   .fr-dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 6px; grid-template-areas: ". u ." "l ok r" ". d ."; }
   .fr-dpad .fr-b { min-width: 0; min-height: 0; padding: 0; font-size: 18px; }
