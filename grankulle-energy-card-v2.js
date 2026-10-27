@@ -103,9 +103,11 @@ const DEFAULT_ENTITIES = {
   shelly2_power: "sensor.shellyplug_s_4022d882ea60_effekt",
   zaptec_charge_switch: "switch.zaptec_laddar",
   zaptec_status: "sensor.zaptec_laddstatus",
-  ev_soc: "sensor.v60_laddningsniva_soc",
-  ev_soc_target: "sensor.v60_malladdningsniva",
-  ev_charging: "binary_sensor.v60_laddning",
+  ev_soc: "sensor.volvo_v60_batteri",                          // official Volvo integration (was Tibber: sensor.v60_laddningsniva_soc)
+  ev_soc_target: "sensor.volvo_v60_malbatteriets_laddningsniva",
+  v60_heat_on: "button.volvo_v60_starta_klimatiseringen",
+  v60_heat_off: "button.volvo_v60_stoppa_klimatiseringen",
+  ev_charging: "sensor.volvo_v60_laddningsstatus",
   zaptec_phase_sw: "number.grankullevagen_19_trefas_till_enfas_vaxelstrom",
   zaptec_auto_fas: "input_boolean.zaptec_auto_1_fas",
   zaptec_btn_resume: "button.zaptec_ateruppta_laddning",
@@ -1786,7 +1788,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     // pulsing blue light in the windshield of the car that is charging
     const v60Ch = this._st("ev_charging");
     const lampV = this.shadowRoot.getElementById("lamp-v60"), lampL = this.shadowRoot.getElementById("lamp-leaf");
-    if (lampV) lampV.classList.toggle("on", carNow ? carNow.short === "V60" : !!(v60Ch && v60Ch.state === "on"));
+    if (lampV) lampV.classList.toggle("on", carNow ? carNow.short === "V60" : !!(v60Ch && /^(on|charging)$/.test(v60Ch.state)));
     if (lampL) lampL.classList.toggle("on", !!(carNow && carNow.short === "LEAF"));
     const evTgt2 = this._num("ev_soc_target");
     const v60 = this.shadowRoot.getElementById("tag-v60");
@@ -1794,10 +1796,10 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const evCh = this._st("ev_charging");
     const evStObj = this._st("ev_soc");
     const evAgeMs = evStObj && evStObj.last_updated ? Date.now() - Date.parse(evStObj.last_updated) : 0;
-    const evStale = evAgeMs > 3 * 3600 * 1000;
+    const evStale = evAgeMs > 3 * 3600 * 1000 && !(evStObj && /volvo/.test(evStObj.entity_id || ""));
     const ageTxt = evAgeMs >= 86400000 ? Math.floor(evAgeMs / 86400000) + " d" : Math.floor(evAgeMs / 3600000) + " h";
     if (v60) v60.style.opacity = evStale ? "0.7" : "";
-    this._set("tag-l-v60", evStale ? "V60 · DATA " + ageTxt + " GAMMAL" : "V60" + (evCh && evCh.state === "on" ? " · LADDAR" : ""));
+    this._set("tag-l-v60", evStale ? "V60 · DATA " + ageTxt + " GAMMAL" : "V60" + (evCh && /^(on|charging)$/.test(evCh.state) ? " · LADDAR" : ""));
     this._set("tag-v-v60", evSoc === null ? "–" : (evStale ? "≈ " : "") + Math.round(evSoc) + " %" + (!evStale && evTgt2 !== null ? " → " + Math.round(evTgt2) + " %" : ""));
     this._v60stale = evStale; this._v60age = ageTxt;
 
