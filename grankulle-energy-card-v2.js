@@ -1233,7 +1233,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const ph = (pre) => [1, 2, 3].map((i) => this._n(n(pre + i), 0)).join(" / ");
     const alarms = [["larm_om_forlorat_elnat", "Förlorat nät"], ["larm_for_hog_dc_spanning", "Hög DC-spänning"], ["larm_for_hog_dc_strom", "Hög DC-ström"], ["larm_for_hog_temperatur", "Hög temperatur"], ["larm_for_lag_batteriniva", "Låg batterinivå"], ["overbelastningslarm", "Överbelastning"], ["rippellarm", "Rippel"], ["spanningssensorlarm", "Spänningssensor"], ["temperatursensorlarm", "Temperatursensor"], ["fasrotationslarm", "Fasrotation"]];
     const P = "sensor.multiplus_ii_48_5000_70_50_id_276_", H = this._hass && this._hass.states || {};
-    const act = alarms.filter((a) => H[P + a[0]] && !/^(no_alarm|unknown|unavailable)$/.test(H[P + a[0]].state)).map((a) => a[1]);
+    const act = alarms.filter((a) => H[P + a[0]] && H[P + a[0]].state === "alarm").map((a) => a[1]);
     const known = alarms.filter((a) => H[P + a[0]]).length;
     const phNames = ["L1", "L2", "L3"];
     const unit = (u) => { const i = n("mp_u" + u + "_in"), o = n("mp_u" + u + "_out"), v = n("mp_u" + u + "_inv"); return this._tile("Enhet " + u + " · " + phNames[u], this._n(o, 0) + " W ut", "in " + this._n(i, 0) + " W · inverterar " + this._n(v, 0) + " W"); };
@@ -1815,8 +1815,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         const d = id.split(".")[0];
         if (d !== "sensor" && d !== "binary_sensor") return;
         const st = hass.states[id];
-        const bad = (d === "sensor" && (st.state === "alarm" || st.state === "warning")) || (d === "binary_sensor" && st.attributes.device_class === "problem" && st.state === "on");
-        if (bad) found.push((st.attributes.friendly_name || id).replace(/^.*?\)\s*/, "").replace(/^GX Device\s*/, "") + (st.state === "warning" ? " (varning)" : ""));
+        const bad = (d === "sensor" && st.state === "alarm") || (d === "binary_sensor" && st.attributes.device_class === "problem" && st.state === "on");
+        if (bad) found.push((st.attributes.friendly_name || id).replace(/^.*?\)\s*/, "").replace(/^GX Device\s*/, ""));
       });
       this._alarmScan = { t: now, found };
     }
