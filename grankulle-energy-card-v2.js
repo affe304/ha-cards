@@ -288,8 +288,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
           <div class="tag-sub" id="tag-s1-ev"></div><div class="tag-sub" id="tag-s3-ev" title="Bara den del som kom från nätet × Tibbers timpris. Sol och batteri räknas som gratis. Beräknat i 5-minutersteg utifrån husets effektbalans (nät, sol, batteri) – ej mätt per bil."></div><div class="tag-sub" id="tag-s2-ev"></div>
         </div>
         <div class="tag green" id="tag-v60" data-action="detail-open" data-tab="bil" style="left:31%; top:66%;">
-          <svg class="tag-car" viewBox="0 0 64 28" aria-hidden="true"><path d="M3 20 V15.5 Q3 13.3 5.4 12.8 L15 11 L20 5.6 Q21 4.5 22.8 4.5 H46 Q47.8 4.5 49 5.8 L53 11 L58.6 12.2 Q61 12.8 61 15.4 V20 Z" fill="#e0262e"/><path d="M21.4 6.2 H45.6 L50 11 H17 Z" fill="#cfe9f7" opacity="0.9"/><path d="M33 6.2 V11" stroke="#e0262e" stroke-width="1.6"/><path d="M4 17 H60" stroke="#a81a21" stroke-width="1"/><circle cx="17" cy="20.5" r="5.2" fill="#1c1c1c"/><circle cx="17" cy="20.5" r="2.1" fill="#b9bcc0"/><circle cx="47" cy="20.5" r="5.2" fill="#1c1c1c"/><circle cx="47" cy="20.5" r="2.1" fill="#b9bcc0"/><rect x="57.5" y="13.6" width="3.4" height="2.2" rx="0.8" fill="#ffe9a6"/></svg>
-          <div class="tag-txt"><div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div></div>
+          <div class="tag-lbl" id="tag-l-v60">V60</div><div class="tag-val" id="tag-v-v60">–</div>
         </div>
         <div class="tag green" id="tag-greenhouse" style="left:91%; top:27%; display:none;">
           <div class="tag-lbl">VÄXTHUS</div><div class="tag-val" id="tag-v-greenhouse">–</div>
@@ -369,8 +368,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
               </div>
             </section>
             <section id="c-v60-sec" style="display:none">
-              <h4>V60 · Förvärm</h4>
-              <div class="cstat" id="c-v60-status">–</div>
+              <div class="v60-head"><svg class="ctl-car" viewBox="0 0 64 28" aria-hidden="true"><path d="M3 20 V15.5 Q3 13.3 5.4 12.8 L15 11 L20 5.6 Q21 4.5 22.8 4.5 H46 Q47.8 4.5 49 5.8 L53 11 L58.6 12.2 Q61 12.8 61 15.4 V20 Z" fill="#e0262e"/><path d="M21.4 6.2 H45.6 L50 11 H17 Z" fill="#cfe9f7" opacity="0.9"/><path d="M33 6.2 V11" stroke="#e0262e" stroke-width="1.6"/><path d="M4 17 H60" stroke="#a81a21" stroke-width="1"/><circle cx="17" cy="20.5" r="5.2" fill="#1c1c1c"/><circle cx="17" cy="20.5" r="2.1" fill="#b9bcc0"/><circle cx="47" cy="20.5" r="5.2" fill="#1c1c1c"/><circle cx="47" cy="20.5" r="2.1" fill="#b9bcc0"/><rect x="57.5" y="13.6" width="3.4" height="2.2" rx="0.8" fill="#ffe9a6"/></svg><div><h4>V60 · Förvärm</h4>
+              <div class="cstat" id="c-v60-status">–</div></div></div>
               <div class="crow">
                 <button class="cbtn" data-action="v60-heat-on">Starta värme</button>
                 <button class="cbtn" data-action="v60-heat-off">Stoppa</button>
@@ -2095,8 +2094,9 @@ const STYLE = `
     transform: translate(-50%, 0);
   }
   .tag.green { border-left-color: #3ddc84; }
-  #tag-v60 { display: flex; align-items: center; gap: 0.5vw; }
-  .tag-car { width: 2.7vw; min-width: 34px; height: auto; flex: none; filter: drop-shadow(0 0 3px rgba(224,38,46,0.45)); }
+  .v60-head { display: flex; align-items: center; gap: 0.6vw; }
+  .v60-head h4 { margin-top: 0; }
+  .ctl-car { width: 4.2vw; min-width: 56px; height: auto; flex: none; filter: drop-shadow(0 0 3px rgba(224,38,46,0.45)); }
   .tag.blue { border-left-color: #42a5f5; }
   .tag.on { border-left-color: #42a5f5; box-shadow: 0 0 8px rgba(66,165,245,0.5); }
   .tag-lbl { opacity: 0.75; letter-spacing: 0.5px; font-size: 0.55vw; }
