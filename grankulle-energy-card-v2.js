@@ -442,6 +442,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "v60-heat-off") this._v60Heat(false);
       else if (a === "batt-full") this._battFull();
       else if (a === "frame") this._frame(t.dataset.do);
+      else if (a === "minsoc") this._setMinSoc(t.dataset.v != null ? parseFloat(t.dataset.v) : null, t.dataset.d ? parseFloat(t.dataset.d) : 0);
       else if (a === "frame-key") this._frameKey(t.dataset.key, t.dataset.hold);
       else if (a === "frame-src") { this._svc("media_player", "select_source", "frame_player", { source: t.dataset.src }); this._frameRefresh(); }
       else if (a === "frame-vol") this._svc("remote", "send_command", "frame_remote", { command: [t.dataset.d === "up" ? "KEY_VOLUP" : "KEY_VOLDOWN"], num_repeats: parseInt(t.dataset.n || "1", 10), delay_secs: 0.15 });
@@ -956,10 +957,38 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._tile("Energins kostnad", bc ? "0–" + this._n(bc.cMax, 2) + " kr/kWh" : "–", bc ? "beräknad (ej mätt): ≈ " + this._n(bc.c, 2) + " kr/kWh" : ""),
       ],
       charts: [
+        this._minSocCard(),
         this._dChart("Laddningsnivå", [{ color: "#4dd0e1", pts: d.soc, area: true }], { unit: "%", d: 0, min: 0, max: 100 }),
         this._dChart("Batterieffekt", [{ legend: [["#3ddc84", "Laddar"], ["#ff9f43", "Urladdar"]], color: "#3ddc84", split: ["#3ddc84", "#ff9f43"], pts: d.batt }], { unit: "kW", d: 2, h: 190 }),
       ],
     };
+  }
+  // Lowest state of charge the ESS lets the battery fall to (GX "Minimum SoC"); set from the battery detail window.
+  _minSocCard() {
+    const cur = this._num("ess_min_soc");
+    if (cur === null) return "";
+    const full = cur >= 99, hv = this._num("ess_min_soc_normal");
+    const b = (v, label, on) => '<button class="fr-b' + (on ? " on" : "") + '" data-action="minsoc" data-v="' + v + '">' + label + "</button>";
+    const presets = [10, 20, 30, 40, 50, 60, 70, 80, 90].map((v) => b(v, v + " %", !full && Math.round(cur) === v)).join("");
+    return '<div class="fr-card" style="margin-bottom:6px"><div class="d-ct" style="margin-top:0">Lägsta laddningsnivå (min SoC) <span class="d-note">batteriet töms inte under detta, resten sparas som reserv</span></div>' +
+      '<div class="d-tiles" style="margin:6px 0"><div class="d-tile"><div class="d-tl">Inställt nu</div><div class="d-tv">' + this._n(cur, 0) + " %</div><div class=\"d-ts\">" + (full ? "Ladda fullt aktivt · släpper när fullt" + (hv !== null ? " (tillbaka till " + this._n(hv, 0) + " %)" : "") : "gäller tills du ändrar") + "</div></div></div>" +
+      '<div class="fr-row"><button class="fr-b big" data-action="minsoc" data-d="-5">−5</button><button class="fr-b big" data-action="minsoc" data-d="-1">−1</button><button class="fr-b big" data-action="minsoc" data-d="1">+1</button><button class="fr-b big" data-action="minsoc" data-d="5">+5</button></div>' +
+      '<div class="fr-row" style="margin-top:8px">' + presets + b(100, "100 % (ladda fullt)", full) + "</div></div>";
+  }
+  // v: absolute %, d: relative step. A value below 100 also becomes the "normal" limit that Ladda fullt returns to.
+  _setMinSoc(v, d) {
+    const id = this._e("ess_min_soc");
+    if (!id || !this._hass) return;
+    const cur = this._num("ess_min_soc");
+    if (v === null || v === undefined) { v = (cur === null ? 29 : cur) + d; if (Math.abs(d) >= 5) v = Math.round(v / 5) * 5; }
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    const helper = this._e("ess_min_soc_normal");
+    if (helper && this._hass.states[helper]) {
+      if (v < 99) this._hass.callService("input_number", "set_value", { entity_id: helper, value: v });
+      else if (cur !== null && cur < 99) this._hass.callService("input_number", "set_value", { entity_id: helper, value: cur });
+    }
+    this._hass.callService("number", "set_value", { entity_id: id, value: v });
+    clearTimeout(this._minRt); this._minRt = setTimeout(() => this._renderDetail(), 1000);
   }
   _dTab_nat(d) {
     const now = ((this._num("grid_power_l1", 0)) + (this._num("grid_power_l2", 0)) + (this._num("grid_power_l3", 0))) / 1000;
