@@ -455,6 +455,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const detEl = this.shadowRoot.getElementById("detail");
     if (detEl) ["pointerdown", "pointermove", "touchstart", "touchmove", "wheel", "scroll", "keydown", "click"].forEach((n) => detEl.addEventListener(n, () => this._idleReset(), { capture: true, passive: true }));
 
+    if (!window.__grankulleAct) {
+      window.__grankulleAct = Date.now();
+      ["pointerdown", "keydown", "touchstart", "wheel"].forEach((n) => document.addEventListener(n, () => { window.__grankulleAct = Date.now(); }, { capture: true, passive: true }));
+      document.addEventListener("visibilitychange", () => { if (!document.hidden && window.__grankulleCard) window.__grankulleCard._dayCheck(); });
+    }
     if (!window.__grankulleEsc) { window.__grankulleEsc = true; document.addEventListener("keydown", (e) => { if (e.key === "Escape" && window.__grankulleCard) window.__grankulleCard._closeDetail(); }); }
     window.__grankulleCard = this;
     const pcBars = this.shadowRoot.getElementById("pc-bars");
@@ -1647,7 +1652,26 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._markActive("c-valve-btns", "minutes", open ? (durMin !== null ? String(durMin) : "") : "0");
   }
 
+  // Day rollover: at midnight (also detected when a sleeping tablet wakes up) every cached number is thrown away and
+  // fetched again, and the detail window is closed. Around 04:00 the page is reloaded when nobody is using it, so a
+  // wall tablet also picks up new card versions and never carries stale state for days.
+  _dayCheck() {
+    const now = new Date(), k = now.toDateString();
+    if (this._dayKey === undefined) { this._dayKey = k; this._loadedAt = Date.now(); return; }
+    if (k !== this._dayKey) { this._dayKey = k; this._dayReset(); }
+    const idleMs = Date.now() - (window.__grankulleAct || 0);
+    const detOpen = (() => { const o = this.shadowRoot && this.shadowRoot.getElementById("detail"); return !!o && o.style.display !== "none"; })();
+    if (now.getHours() === 4 && Date.now() - this._loadedAt > 3 * 3600e3 && idleMs > 5 * 60e3 && !detOpen && !document.hidden) location.reload();
+  }
+  _dayReset() {
+    this._closeDetail();
+    this._dCache = {}; this._dData = null; this._plan = null; this._planCache = null;
+    this._solarToday = null; this._sessCost = null; this._events = []; this._lbuf = []; this._gbuf = [];
+    this._fetchDay(); this._fetchPrices(); this._fetchSession(); this._fetchEvents(); this._fetchWarnings();
+    if (this._fetchForecast) this._fetchForecast();
+  }
   _tickClock() {
+    this._dayCheck();
     const now = new Date();
     this._set("clock", now.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }));
     this._set("clockdate", now.toLocaleDateString("sv-SE", { weekday: "long", day: "2-digit", month: "long" }));
