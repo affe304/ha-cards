@@ -1033,6 +1033,9 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             o.dg += dg; o.net += avG - cost; o.ds += ds; o.avS += avS; o.avG += avG;
             tot.dg += dg; tot.ds += ds; tot.avG += avG; tot.cost += cost; tot.avS += avS; Sg -= dg; Ss -= ds;
           }
+          // keep the stock within what the battery can really hold (the charge/discharge counters drift apart over months)
+          const so = mean("soc", t);
+          if (so != null) { const S2 = Sg + Ss, tg = (so / 100) * cap; if (S2 > tg && S2 > 0) { const kk = Math.max(0.2, tg) / S2; Sg *= kk; Ss *= kk; } }
         });
         const list = Object.keys(days).sort().map((k) => Object.assign({ day: k }, days[k]));
         let cum = 0; list.forEach((x) => { cum += x.net; x.cum = cum; });
