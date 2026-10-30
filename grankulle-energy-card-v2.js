@@ -423,9 +423,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
 
     this.shadowRoot.addEventListener("click", (ev) => {
       if (ev.target.id === "detail") { this._closeDetail(); return; }
+      const btn = ev.target.closest && ev.target.closest("button");
+      if (btn) { btn.classList.remove("pressed"); void btn.offsetWidth; btn.classList.add("pressed"); setTimeout(() => btn.classList.remove("pressed"), 700); }
       const t = ev.target.closest("[data-action]");
       if (!t) { return; }
       const a = t.dataset.action;
+      // clear confirmation for buttons that send something (not for navigation inside the card)
+      if (btn && !/^(detail-|toggle-controls|spar-eff)/.test(a)) this._toast("✓ Skickat · " + (btn.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
       if (a === "detail-open") this._openDetail(t.dataset.tab);
       else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); if (this._dTab === "plan") this._loadPlan(); }
       else if (a === "detail-range") { this._dRange = t.dataset.range; this._renderDetail(); this._loadDetail(); }
@@ -1579,6 +1583,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     else if (what === "off") this._svc("remote", "send_command", "frame_remote", { command: ["KEY_POWER"], hold_secs: 4 });
     else if (what === "dash") this._svc("cast", "show_lovelace_view", "frame_cast", { view_path: "0", dashboard_path: "dashboard-v2" });
   }
+  _toast(msg) {
+    let el = this.shadowRoot.getElementById("g-toast");
+    if (!el) { el = document.createElement("div"); el.id = "g-toast"; this.shadowRoot.appendChild(el); }
+    el.textContent = msg; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+    clearTimeout(this._toastT); this._toastT = setTimeout(() => el.classList.remove("show"), 1600);
+  }
   _frameKey(key, hold) {
     if (!this._hass || !key) return;
     const data = { command: [key] };
@@ -2296,6 +2306,13 @@ const STYLE = `
     border-radius: 6px; padding: 0.2vw 0.4vw; min-height: 1.3vw;
   }
   .cbtn:hover { background: rgba(255,255,255,0.2); }
+  /* clear press feedback on every button: instant bright colour + shrink while held, a green flash and a "✓ Skickat" note afterwards */
+  .cbtn, .d-tab, .d-rb, .d-close, .fr-b { transition: transform 0.08s, box-shadow 0.12s; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  .cbtn:active, .d-tab:active, .d-rb:active, .d-close:active, .fr-b:active { transform: scale(0.92); background: #3ddc84 !important; color: #06210f !important; border-color: #fff !important; box-shadow: 0 0 0 3px rgba(61,220,132,0.6); }
+  .pressed { animation: btnflash 0.7s ease-out; }
+  @keyframes btnflash { 0% { background: #3ddc84; color: #06210f; border-color: #fff; box-shadow: 0 0 0 4px rgba(61,220,132,0.75); transform: scale(0.94); } 45% { background: #3ddc84; color: #06210f; } 100% { box-shadow: 0 0 0 12px rgba(61,220,132,0); } }
+  #g-toast { position: fixed; left: 50%; bottom: 4%; transform: translate(-50%, 20px); background: rgba(14, 90, 54, 0.96); color: #fff; border: 1px solid #3ddc84; border-radius: 22px; padding: 9px 20px; font-size: 16px; font-weight: 700; opacity: 0; pointer-events: none; z-index: 120; transition: opacity 0.15s, transform 0.15s; white-space: nowrap; }
+  #g-toast.show { opacity: 1; transform: translate(-50%, 0); }
   .cbtn.active { background: rgba(61,220,132,0.3); border-color: #3ddc84; font-weight: 700; }
   .cbtn.close { padding: 0.05vw 0.4vw; min-height: 0; }
   .ctemp { font-weight: 800; font-size: 1.2vw; min-width: 4vw; text-align: center; }
