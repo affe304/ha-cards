@@ -93,6 +93,7 @@ const DEFAULT_ENTITIES = {
   weather_rain_today: "sensor.st_00150138_nederbord",
 
   coop_temp: "sensor.st_00133621_temperatur",
+  coop_batt_v: "sensor.st_00133621_batteriets_spanning",   // Tempest battery voltage; a notice shows under the coop temperature when it is below 2.35 V
   greenhouse_temp: null,
   greenhouse_humidity: null,
 
@@ -295,6 +296,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         </div>
         <div class="tag" id="tag-coop" data-action="detail-open" data-tab="vader" style="left:87%; top:58%;">
           <div class="tag-lbl">HÖNSHUS</div><div class="tag-val" id="tag-v-coop">–</div>
+          <div class="tag-sub tag-warnsub" id="tag-s-coop"></div>
         </div>
         <div class="tag blue" id="tag-hose" data-action="toggle-hose" style="left:84%; top:52%; cursor:pointer;">
           <div class="tag-lbl">SLANG</div><div class="tag-val" id="tag-v-hose">–</div>
@@ -1305,7 +1307,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             return Math.abs(o.t - r.t) > 2 * 3600e3 ? "" : '<br><span style="color:#ff5a5a;font-weight:700">ute ' + this._n(o.v, 1) + " °C</span>";
           };
           return [
-            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : ""),
+            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", (cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : "") + (this._num("coop_batt_v") !== null && this._num("coop_batt_v") < 2.35 ? '<br><span style="color:#ffb347;font-weight:700">⚠ Lågt batteri ' + this._n(this._num("coop_batt_v"), 2) + " V</span>" : "")),
             this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) + outAt(cmin) : ""),
             this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) + outAt(cmax) : ""),
           ];
@@ -2079,6 +2081,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const coopTemp = this._num("coop_temp");
     this._set("tag-v-coop", coopTemp === null ? "–" : coopTemp.toFixed(1) + " °C");
     this._set("v-sens-coop", coopTemp === null ? "–" : coopTemp.toFixed(1) + " °C");
+    const cbv = this._num("coop_batt_v");
+    this._set("tag-s-coop", cbv !== null && cbv < 2.35 ? "⚠ Lågt batteri " + cbv.toFixed(2) + " V" : "");
 
     const ghTemp = this._num("greenhouse_temp");
     const ghHum = this._num("greenhouse_humidity");
@@ -2255,6 +2259,7 @@ const STYLE = `
   @media (max-width: 900px) { .alarmbanner { width: 94%; padding: 10px 12px; } .al-title { font-size: 15px; } .al-time { font-size: 20px; } .al-sub, .al-adv, .al-other { font-size: 12px; } }
   .tag-sub { font-size: 0.58vw; opacity: 0.85; margin-top: 2px; white-space: nowrap; }
   .tag-sub:empty { display: none; }
+  .tag-warnsub { color: #ffb347; font-weight: 700; }
 
   .navbar {
     position: absolute; left: 2%; bottom: 2%; right: 2%;
