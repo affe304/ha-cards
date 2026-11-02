@@ -1058,16 +1058,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const eff = this._sparEff === "100" ? "100" : "93", R = eff === "100" ? S.e100 : S.e93, T = R.tot;
     const f0 = (x) => Math.round(x).toLocaleString("sv-SE"), f2 = (x) => this._n(x, 2);
     const net = T.avG - T.cost;
-    const lastN = (n) => R.list.filter((x) => x.t >= Date.now() - n * 86400e3).reduce((a, x) => a + x.net, 0);
     const since = new Date(R.from).toLocaleDateString("sv-SE", { day: "numeric", month: "long" });
     const mon = {};
     R.list.forEach((x) => { const m = x.day.slice(0, 7), o = mon[m] = mon[m] || { net: 0, dg: 0, avG: 0, ds: 0, avS: 0 }; o.net += x.net; o.dg += x.dg; o.avG += x.avG; o.ds += x.ds; o.avS += x.avS; });
     const mn = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+    const nowD = new Date(), curM = nowD.getFullYear() + "-" + String(nowD.getMonth() + 1).padStart(2, "0"), pd = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1), prevM = pd.getFullYear() + "-" + String(pd.getMonth() + 1).padStart(2, "0");
     const rows = Object.keys(mon).sort().map((m) => { const o = mon[m]; return '<div class="sp-row"><b>' + mn[parseInt(m.slice(5), 10) - 1] + " " + m.slice(0, 4) + "</b><span>" + f0(o.net) + " kr</span><span>" + this._n(o.dg, 0) + " kWh köpt el använd</span><span>" + this._n(o.ds, 0) + " kWh sol-el, " + f0(o.avS) + " kr</span></div>"; }).join("");
     const toggle = '<div class="fr-row" style="margin:6px 0"><button class="fr-b' + (eff === "93" ? " on" : "") + '" data-action="spar-eff" data-eff="93">Med förluster (93 %)</button><button class="fr-b' + (eff === "100" ? " on" : "") + '" data-action="spar-eff" data-eff="100">Utan förluster</button></div>';
     const tiles = [
       this._tile("Vinst totalt", f0(net) + " kr", "sedan " + since),
-      this._tile("Senaste 30 dygnen", f0(lastN(30)) + " kr", "senaste 7: " + f0(lastN(7)) + " kr"),
+      this._tile("Denna månad", f0((mon[curM] || { net: 0 }).net) + " kr", "förra månaden: " + f0((mon[prevM] || { net: 0 }).net) + " kr"),
       this._tile("Billig el köpt in", this._n(T.chgG, 0) + " kWh", f0(T.spend) + " kr · snitt " + f2(T.spend / (T.chgG || 1)) + " kr/kWh"),
       this._tile("Använd av den", this._n(T.dg, 0) + " kWh", "ersatte inköp á " + f2(T.avG / ((T.dg * (eff === "100" ? 1 : 0.93)) || 1)) + " kr/kWh"),
       this._tile("Inköp som slapp köpas", f0(T.avG) + " kr", "kostade " + f0(T.cost) + " kr att lagra"),
@@ -1085,6 +1085,42 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const extra = '<div class="d-ct">Per månad <span class="d-note">vinst = inköp som slapp köpas minus vad den lagrade elen kostade</span></div><div class="sp-tab">' + rows + "</div>" +
       '<div class="d-note" style="margin-top:10px;line-height:1.5">Så räknas det: den el som laddats från nätet värderas till Tibbers timpris när den köptes (genomsnittskostnad över det som ligger lagrat). När batteriet laddar ur räknas varje kWh som en kWh du annars hade köpt till timpriset just då. Vinsten är skillnaden. Elpriset är Tibbers pris per timme; nätavgifter och effektavgift ingår inte. Sol-el som lagras räknas inte in i vinsten (den är gratis), men visas separat. Batteriet antas ha startat med sol-el. Det är en uppskattning, inte en mätning.</div>';
     return { tiles, charts, extra };
+  }
+  // Grid cost per calendar month (hourly long-term statistics x Tibber hourly price), up to ~13 months back
+  async _loadGridMonths() {
+    if (!this._hass || !this._hass.callWS || this._gmBusy) return;
+    this._gmBusy = true;
+    try {
+      const ids = ["grid_power_l1", "grid_power_l2", "grid_power_l3"].map((k) => this._e(k)).filter(Boolean), pid = this._e("tibber_price");
+      if (!ids.length || !pid) throw new Error("saknar entiteter");
+      const r = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(Date.now() - 400 * 86400e3).toISOString(), end_time: new Date().toISOString(), statistic_ids: ids.concat([pid]), period: "hour", types: ["mean"] });
+      const pr = {}; (r[pid] || []).forEach((x) => { if (x.mean != null) pr[typeof x.start === "number" ? x.start : Date.parse(x.start)] = x.mean; });
+      const kw = {}; ids.forEach((id) => (r[id] || []).forEach((x) => { if (x.mean != null) { const t = typeof x.start === "number" ? x.start : Date.parse(x.start); kw[t] = (kw[t] || 0) + x.mean / 1000; } }));
+      const mon = {}; let last = null;
+      Object.keys(kw).map(Number).sort((a, b) => a - b).forEach((t) => {
+        let p = pr[t]; if (p == null) p = last; else last = p;
+        if (p == null) return;
+        const dt = new Date(t), k = dt.toLocaleDateString("sv-SE", { timeZone: "Europe/Stockholm" }).slice(0, 7), e = kw[t];
+        const o = mon[k] = mon[k] || { buy: 0, sell: 0, cost: 0, rev: 0 };
+        if (e > 0) { o.buy += e; o.cost += e * p; } else { o.sell += -e; o.rev += -e * p; }
+      });
+      this._gm = { at: Date.now(), mon };
+    } catch (e) { console.warn("grankulle: month costs failed", e); this._gm = { at: Date.now(), error: String((e && e.message) || e) }; }
+    this._gmBusy = false;
+    if (this._dTab === "nat") this._renderDetail();
+  }
+  _gridMonthsHtml() {
+    if (!this._gm || Date.now() - this._gm.at > 30 * 60e3) { this._loadGridMonths(); }
+    const G = this._gm;
+    if (!G) return '<div class="d-ct">Kostnad per månad</div><div class="d-empty">Räknar på historiken…</div>';
+    if (G.error) return '<div class="d-ct">Kostnad per månad</div><div class="d-empty">Kunde inte räkna månaderna: ' + G.error + "</div>";
+    const mn = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+    const f0 = (x) => Math.round(x).toLocaleString("sv-SE"), nd = new Date(), cur = nd.getFullYear() + "-" + String(nd.getMonth() + 1).padStart(2, "0");
+    const rows = Object.keys(G.mon).sort().reverse().map((m) => {
+      const o = G.mon[m], net = o.cost - o.rev;
+      return '<div class="sp-row sp-row5"><b>' + mn[parseInt(m.slice(5), 10) - 1] + " " + m.slice(0, 4) + (m === cur ? " (hittills)" : "") + "</b><span>kostnad " + f0(o.cost) + " kr</span><span>" + this._n(o.buy, 0) + " kWh köpt" + (o.buy > 0 ? " · snitt " + this._n(o.cost / o.buy, 2) + " kr/kWh" : "") + "</span><span>såld " + this._n(o.sell, 0) + " kWh, " + f0(o.rev) + " kr</span><span>netto " + f0(net) + " kr</span></div>";
+    }).join("");
+    return '<div class="d-ct">Kostnad per månad <span class="d-note">köpt el x Tibbers timpris, kalendermånader</span></div><div class="sp-tab">' + rows + '</div><div class="d-note" style="margin-top:8px;line-height:1.5">Beräknat på timmedelvärden från Home Assistants långtidsstatistik. Såld el räknas till samma timpris. Nätavgift och effektavgift ingår inte.</div>';
   }
   _dTab_nat(d) {
     const now = ((this._num("grid_power_l1", 0)) + (this._num("grid_power_l2", 0)) + (this._num("grid_power_l3", 0))) / 1000;
@@ -1124,7 +1160,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._dChart("Nätets effekt (över 0 = köper, under 0 = säljer)", [{ legend: [["#ff7a59", "Köper"], ["#3ddc84", "Säljer"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], pts: d.grid }], { unit: "kW", d: 2 }),
         this._dChart("Kostnad per timme (över 0 = betalat, under 0 = intjänat)", [{ legend: [["#ff7a59", "Betalat"], ["#3ddc84", "Intjänat"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], step: true, pts: costPts }], { unit: "kr", d: 2, h: 190 }),
       ],
-      extra: '<div class="d-note" style="margin-top:10px;line-height:1.5">Kostnaden är köpt energi från nätet gånger Tibbers pris för den timmen. Såld el räknas till samma pris (spotpris), så intäkten är en uppskattning av vad Tibber betalar. Nätavgift och effektavgift ingår inte.</div>',
+      extra: this._gridMonthsHtml() + '<div class="d-note" style="margin-top:10px;line-height:1.5">Kostnaden i rutorna ovan är köpt energi från nätet gånger Tibbers pris för den timmen. Såld el räknas till samma pris (spotpris), så intäkten är en uppskattning av vad Tibber betalar. Nätavgift och effektavgift ingår inte.</div>',
     };
   }
   _dTab_bil(d) {
@@ -1886,7 +1922,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   }
   _dayReset() {
     this._closeDetail();
-    this._dCache = {}; this._dData = null; this._spar = null; this._plan = null; this._planCache = null;
+    this._dCache = {}; this._dData = null; this._spar = null; this._gm = null; this._plan = null; this._planCache = null;
     this._solarToday = null; this._sessCost = null; this._events = []; this._lbuf = []; this._gbuf = [];
     this._fetchDay(); this._fetchPrices(); this._fetchSession(); this._fetchEvents(); this._fetchWarnings();
     if (this._fetchForecast) this._fetchForecast();
@@ -2440,6 +2476,8 @@ const STYLE = `
   .d-note { font-weight: 400; opacity: 0.6; font-size: 11px; }
   .sp-tab { display: grid; gap: 6px; }
   .sp-row { display: grid; grid-template-columns: 1.2fr 0.7fr 1.3fr 1.5fr; gap: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .sp-row5 { grid-template-columns: 1.3fr 0.9fr 1.4fr 1.3fr 0.9fr; }
+  @media (max-width: 800px) { .sp-row, .sp-row5 { grid-template-columns: 1fr 1fr; } }
   .sp-row b { text-transform: capitalize; }
   @media (max-width: 700px) { .sp-row { grid-template-columns: 1fr 1fr; } }
   .fr-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
