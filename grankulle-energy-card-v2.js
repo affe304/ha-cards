@@ -433,7 +433,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       // clear confirmation for buttons that send something (not for navigation inside the card)
       if (btn && !/^(detail-|toggle-controls|spar-eff)/.test(a)) this._toast("✓ Skickat · " + (btn.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
       if (a === "detail-open") this._openDetail(t.dataset.tab);
-      else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); if (this._dTab === "plan") this._loadPlan(); }
+      else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); if (this._dTab === "plan" || this._dTab === "vit") this._loadPlan(); }
       else if (a === "detail-range") { this._dRange = t.dataset.range; this._renderDetail(); this._loadDetail(); }
       else if (a === "detail-close") this._closeDetail();
       else if (a === "toggle-controls") this._toggleControls();
@@ -700,7 +700,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _detailTabs() {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
-      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" }, { k: "spar", t: "💸 Besparing" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vit", t: "🧺 Vitvaror" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" }, { k: "spar", t: "💸 Besparing" },
     ].concat(this._st("frame_player") ? [{ k: "frame", t: "📺 The Frame" }] : []);
   }
   _openDetail(tab) {
@@ -712,11 +712,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._idleReset();
     this._renderDetail();
     this._loadDetail();
-    if (this._dTab === "plan") this._loadPlan();
+    if (this._dTab === "plan" || this._dTab === "vit") this._loadPlan();
     clearInterval(this._dTimer);
     this._dTimer = setInterval(() => { this._renderDetail(); }, 15000);
     clearInterval(this._dLoad);
-    this._dLoad = setInterval(() => { this._loadDetail(); if (this._dTab === "plan") this._loadPlan(); }, 90000);
+    this._dLoad = setInterval(() => { this._loadDetail(); if (this._dTab === "plan" || this._dTab === "vit") this._loadPlan(); }, 90000);
   }
   _idleReset() {
     clearTimeout(this._dIdle);
@@ -1292,6 +1292,75 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const rows = seg.map((g) => '<div class="ev" style="border-left-color:' + (sCol[g.strat] || "#888") + '"><div class="ev-t">' + this._hm(g.start) + "–" + this._hm(g.end) + " · " + sName(g.strat) + '</div><div class="ev-d">målnivå ' + this._n(g.t0, 0) + (Math.round(g.t1) !== Math.round(g.t0) ? " → " + this._n(g.t1, 0) : "") + " %" + (g.feed ? " · försäljning tillåten" : "") + "</div></div>").join("");
     const note = '<div class="d-note" style="margin-top:8px">Strategierna är de som DESS schemalagt i GX-enheten. Exakt hur mycket som köps eller säljs per period beslutas löpande av systemet.</div>';
     return { tiles: hdr, charts, extra: '<div class="d-ct">Planen i klartext</div>' + rows + note };
+  }
+  // Vitvaror: should the washer / dishwasher / dryer run now (on battery) or wait?  Uses the DESS plan (strategy + planned SoC per 15 min),
+  // the Tibber hourly prices and the battery level. Battery energy is valued at what it costs to recharge it at the cheapest upcoming hour.
+  _dTab_vit(d) {
+    const P = this._plan, now = Date.now(), cap = 19, eff = 0.93, Q = 900e3;
+    const socNow = this._num("battery_soc");
+    const fl = this._num("ess_min_soc"), floor = fl != null ? Math.min(fl, 99) : 15;
+    const H = this._hourly || [], pm = {};
+    H.forEach((r) => { pm[r.t] = r.price; });
+    const fut = H.filter((r) => r.t + 3600e3 > now).map((r) => r.price);
+    const nowP = this._num("tibber_price");
+    const avgP = fut.length ? fut.reduce((a, b) => a + b, 0) / fut.length : (nowP != null ? nowP : 1);
+    const pAt = (t) => { const v = pm[Math.floor(t / 3600e3) * 3600e3]; return v != null ? v : avgP; };
+    const slots = P && P.slots ? P.slots : [];
+    const slotAt = (t) => slots.find((s) => t >= s.t && t < s.t + s.dur) || null;
+    const minP = fut.length ? Math.min.apply(null, fut) : avgP, cb = minP / eff;
+    const sName = (k) => ({ 0: "Målnivå", 1: "Egenförbrukning", 2: "Prioritera batteri", 3: "Prioritera nät" }[k] || "okänd");
+    const APP = [
+      { n: "Tvättmaskin", ic: "🧺", kwh: 1.0, h: 2 },
+      { n: "Diskmaskin", ic: "🍽️", kwh: 1.2, h: 2 },
+      { n: "Torktumlare", ic: "👕", kwh: 2.5, h: 2.5 },
+    ];
+    const sim = (a, s) => {
+      const steps = Math.round(a.h * 4), e = a.kwh / steps;
+      let cost = 0, bat = 0;
+      for (let i = 0; i < steps; i++) {
+        const t = s + i * Q, sl = slotAt(t);
+        let soc = t - now < Q && socNow != null ? socNow : sl ? (sl.soc != null && sl.soc > 0 ? sl.soc : sl.target) : null;
+        let battOk = false;
+        if (sl && soc != null) battOk = sl.strat === 1 || (sl.strat === 0 && sl.target != null && sl.target < soc - 0.5);
+        else if (!slots.length && soc != null && s <= now + Q) battOk = true;
+        if (battOk && soc != null && ((soc - floor) / 100) * cap >= bat + e + 0.3) { bat += e; cost += e * cb; }
+        else cost += e * pAt(t);
+      }
+      return { s, cost, bat };
+    };
+    const hEnd = H.length ? H[H.length - 1].t + 3600e3 : now + 12 * 3600e3;
+    const res = APP.map((a) => {
+      const lim = Math.max(now, Math.min(now + 24 * 3600e3, hEnd) - a.h * 3600e3);
+      const c = [sim(a, now)];
+      for (let s = Math.ceil((now + 1) / Q) * Q; s <= lim; s += Q) c.push(sim(a, s));
+      const cur = c[0];
+      let best = c[0];
+      c.forEach((x) => { if (x.cost < best.cost - 0.02) best = x; });
+      // best start per hour (for the top-3 list)
+      const byH = {};
+      c.forEach((x) => { const k = Math.floor(x.s / 3600e3); if (!byH[k] || x.cost < byH[k].cost) byH[k] = x; });
+      const top = Object.keys(byH).map((k) => byH[k]).sort((p, q) => p.cost - q.cost || p.s - q.s).slice(0, 3);
+      const save = cur.cost - best.cost, thr = Math.max(0.3, cur.cost * 0.15), pct = cur.bat / a.kwh;
+      let head, cls = "";
+      if (pct >= 0.8 && save < Math.max(0.3, cur.cost * 0.2)) head = "✅ Kör nu (batteri)";
+      else if (save < thr) head = "✅ Kör nu";
+      else { head = "⏳ Vänta till " + this._dayHm(best.s); cls = "d-warn"; }
+      return { a, cur, best, top, save, pct, head, cls };
+    });
+    const avail = socNow != null ? Math.max(0, ((socNow - floor) / 100) * cap) : null;
+    const cs = slotAt(now);
+    const tiles = res.map((r) => this._tile(r.a.ic + " " + r.a.n, r.head,
+      "nu ≈ " + this._n(r.cur.cost, 2) + " kr" + (r.cur.bat > 0 ? " (" + Math.round(r.pct * 100) + " % från batteri)" : " (från nätet)") + (r.cls ? "" : " · ingen stor vinst att vänta") +
+      (r.save >= Math.max(0.3, r.cur.cost * 0.15) ? " · bäst " + this._dayHm(r.best.s) + " ≈ " + this._n(r.best.cost, 2) + " kr" : ""), r.cls));
+    tiles.push(this._tile("Batteri nu", socNow != null ? this._n(socNow, 0) + " %" : "–", avail != null ? "≈ " + this._n(avail, 1) + " kWh över lägsta nivå (" + this._n(floor, 0) + " %)" : ""));
+    tiles.push(this._tile("Planen just nu", cs ? sName(cs.strat) : "–", cs ? "målnivå " + this._n(cs.target, 0) + " %" : P && P.error ? "plan ej läsbar" : "väntar på plan"));
+    tiles.push(this._tile("Batterienergin värderas till", this._n(cb, 2) + " kr/kWh", "billigaste kommande timpris " + this._n(minP, 2) + " kr / " + eff + " verkningsgrad"));
+    const rows = res.map((r) => '<div class="d-ct">' + r.a.ic + " " + r.a.n + ' <span class="d-note">antar ' + this._n(r.a.kwh, 1) + " kWh över " + this._n(r.a.h, 1) + " tim</span></div>" +
+      r.top.map((x, i) => '<div class="ev' + (i === 0 ? " ev-green" : "") + '"><div class="ev-t">' + (x.s === r.cur.s ? "Starta nu" : "Starta " + this._dayHm(x.s)) + ' · ≈ ' + this._n(x.cost, 2) + ' kr</div><div class="ev-d">' + (x.bat > 0 ? Math.round((x.bat / r.a.kwh) * 100) + " % från batteriet" : "från nätet till timpris") + "</div></div>").join("")).join("");
+    const price = H.filter((r) => r.t + 3600e3 > now && r.t < now + 30 * 3600e3).map((r) => ({ t: r.t, v: r.price }));
+    const charts = price.length ? [this._dChart("Elpris kommande timmar", [{ color: "#f2c94c", step: true, area: true, pts: price }], { unit: "kr/kWh", d: 2, t0: now, t1: price[price.length - 1].t + 3600e3, h: 150 })] : [];
+    const note = '<div class="d-note" style="margin-top:10px;line-height:1.5">Så räknas det: för varje möjlig starttid (var 15:e minut) jämförs vad körningen kostar. Under perioder där Victrons plan låter batteriet försörja huset (Egenförbrukning, eller Målnivå med målet under nuvarande nivå) räknas elen från batteriet så länge det finns energi över lägsta nivå. Då värderas den till vad det kostar att ladda upp den igen vid dygnets billigaste timme. Annars köps den från nätet till Tibbers timpris. Sol-el ingår inte i uträkningen, så en soldag blir i praktiken ännu billigare. Förbrukningen är uppskattad (tvätt 1,0 kWh, disk 1,2 kWh, tork 2,5 kWh) och nätavgifter ingår inte. ' + (slots.length ? "" : "Planen kunde inte läsas från GX-enheten, så beräkningen utgår bara från batterinivån och priset. ") + 'Är din tork en värmepumpstork (ca 1 kWh) kan antagandet justeras.</div>';
+    return { tiles, charts, extra: rows + note };
   }
   _dTab_vader(d) {
     const dirTxt = (deg) => deg == null ? "–" : ["N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO", "S", "SSV", "SV", "VSV", "V", "VNV", "NV", "NNV"][Math.round(deg / 22.5) % 16];
