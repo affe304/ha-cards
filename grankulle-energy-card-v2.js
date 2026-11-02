@@ -1092,8 +1092,25 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const imp = this._peak(d.grid), exp = this._peak(d.grid.map((r) => ({ t: r.t, v: -r.v })));
     const ph = [1, 2, 3].map((i) => this._n((this._num("grid_power_l" + i, 0)), 0)).join(" / ");
     const tb = this._num("tibber_consumption"), ts = this._num("tibber_production"), tc = this._num("tibber_cost"), tr = this._num("tibber_reward");
+    // Kostnad = köpt energi x Tibbers timpris (spotpris inkl. Tibbers påslag/skatter enligt sensorn). Nätavgift/effektavgift ingår inte.
+    const pm = {}; (d.price || []).forEach((r) => { pm[r.t] = r.v; });
+    const priceAt = (t) => { const v = pm[t]; if (v != null) return v; const h = pm[Math.floor(t / 3600e3) * 3600e3]; return h != null ? h : null; };
+    let cost = 0, rev = 0, kBuy = 0, kSell = 0, miss = 0;
+    const perH = {};
+    d.grid.forEach((r) => {
+      const p = priceAt(r.t), e = r.v * d.dt;
+      if (p == null) { if (Math.abs(e) > 0) miss++; return; }
+      const hk = Math.floor(r.t / 3600e3) * 3600e3;
+      if (e > 0) { cost += e * p; kBuy += e; perH[hk] = (perH[hk] || 0) + e * p; }
+      else { rev += -e * p; kSell += -e; perH[hk] = (perH[hk] || 0) + e * p; }
+    });
+    const costPts = Object.keys(perH).map(Number).sort((a, b) => a - b).map((t) => ({ t, v: perH[t] }));
+    const net = cost - rev, avgP = kBuy > 0 ? cost / kBuy : null;
     return {
       tiles: [
+        this._tile("Kostnad från nätet " + this._rng(), this._n(cost, cost < 100 ? 1 : 0) + " kr", kBuy > 0 ? this._n(kBuy, 1) + " kWh · snitt " + this._n(avgP, 2) + " kr/kWh" : "", "d-hi"),
+        this._tile("Intäkt såld el " + this._rng(), this._n(rev, 1) + " kr", kSell > 0 ? this._n(kSell, 1) + " kWh · spotpris" : ""),
+        this._tile("Netto " + this._rng(), this._n(net, net > -100 && net < 100 ? 1 : 0) + " kr", (net > 0 ? "du har betalat" : "du har tjänat") + (this._dRange === "7d" ? " · snitt " + this._n(net / 7, 1) + " kr/dygn" : "") + (miss ? " · " + miss + " pkt utan pris" : "")),
         this._tile("Just nu", this._n(Math.abs(now), 2) + " kW", now > 0.05 ? "köper från nätet" : now < -0.05 ? "säljer till nätet" : "balans"),
         this._tile("Köpt " + this._rng(), this._n(buy, 1) + " kWh"),
         this._tile("Sålt " + this._rng(), this._n(sell, 1) + " kWh"),
@@ -1103,7 +1120,11 @@ class GrankulleEnergyCardV2 extends HTMLElement {
         this._tile("Idag köpt", this._n(tb, 1) + " kWh", tc != null ? "kostnad " + this._n(tc, 0) + " kr" : ""),
         this._tile("Idag sålt", this._n(ts, 1) + " kWh", tr != null ? "ersättning " + this._n(tr, 0) + " kr" : ""),
       ],
-      charts: [this._dChart("Nätets effekt (över 0 = köper, under 0 = säljer)", [{ legend: [["#ff7a59", "Köper"], ["#3ddc84", "Säljer"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], pts: d.grid }], { unit: "kW", d: 2 })],
+      charts: [
+        this._dChart("Nätets effekt (över 0 = köper, under 0 = säljer)", [{ legend: [["#ff7a59", "Köper"], ["#3ddc84", "Säljer"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], pts: d.grid }], { unit: "kW", d: 2 }),
+        this._dChart("Kostnad per timme (över 0 = betalat, under 0 = intjänat)", [{ legend: [["#ff7a59", "Betalat"], ["#3ddc84", "Intjänat"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], step: true, pts: costPts }], { unit: "kr", d: 2, h: 190 }),
+      ],
+      extra: '<div class="d-note" style="margin-top:10px;line-height:1.5">Kostnaden är köpt energi från nätet gånger Tibbers pris för den timmen. Såld el räknas till samma pris (spotpris), så intäkten är en uppskattning av vad Tibber betalar. Nätavgift och effektavgift ingår inte.</div>',
     };
   }
   _dTab_bil(d) {
