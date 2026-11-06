@@ -789,6 +789,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _tile(label, value, sub, cls) {
     return '<div class="d-tile' + (cls ? " " + cls : "") + '"><div class="d-tl">' + label + '</div><div class="d-tv">' + value + '</div>' + (sub ? '<div class="d-ts">' + sub + "</div>" : "") + "</div>";
   }
+  // Section heading inside the tile grid, and a wide "pair" tile that puts two related values side by side. cls: g-sun g-house g-batt g-buy g-sell g-car g-price g-wind g-temp g-coop g-info
+  _tg(title, cls) { return '<div class="d-tg ' + (cls || "") + '">' + title + "</div>"; }
+  _pair(a, b) {
+    const half = (x) => '<div class="d-ph ' + (x[3] || "") + '"><div class="d-tl">' + x[0] + '</div><div class="d-tv">' + x[1] + "</div>" + (x[2] ? '<div class="d-ts">' + x[2] + "</div>" : "") + "</div>";
+    return '<div class="d-tile d-pair">' + half(a) + half(b) + "</div>";
+  }
   _hrs(h) {
     if (h == null || !isFinite(h) || h < 0) return "–";
     const m = Math.round(h * 60);
@@ -932,13 +938,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const ys = this._st("solar_yield_total");
     return {
       tiles: [
-        this._tile("Just nu", this._n(now, 2) + " kW", now > 0.05 ? "producerar" : "ingen produktion"),
-        this._tile("Idag", this._n(this._solarToday, 1) + " kWh", "sedan midnatt"),
-        this._tile("Topp " + this._rng(), pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : ""),
-        this._tile("Totalt " + this._rng(), this._n(tot, 1) + " kWh", this._dRange === "7d" ? "snitt " + this._n(tot / 7, 1) + " kWh/dygn" : ""),
-        this._tile("Prognos idag (VRM)", this._vrmN("uppskattad_energiproduktion_idag") == null ? "–" : this._n(this._vrmN("uppskattad_energiproduktion_idag"), 1) + " kWh", this._vrmN("uppskattad_energiproduktion_aterstaende_idag") != null ? "kvar " + this._n(this._vrmN("uppskattad_energiproduktion_aterstaende_idag"), 1) + " kWh" : ""),
-        this._tile("Prognos imorgon (VRM)", this._vrmN("beraknad_energiproduktion_imorgon") == null ? "–" : this._n(this._vrmN("beraknad_energiproduktion_imorgon"), 1) + " kWh", this._vrmT("hogsta_rusningstid_imorgon") ? "topp " + this._vrmT("hogsta_rusningstid_imorgon") : ""),
-        this._tile("Sedan start", ys ? this._n(parseFloat(ys.state), 0) + " " + (ys.attributes.unit_of_measurement || "") : "–", "Fronius totalt"),
+        this._tg("Just nu", "g-sun"),
+        this._tile("Effekt nu", this._n(now, 2) + " kW", now > 0.05 ? "producerar" : "ingen produktion", "g-sun"),
+        this._tile("Idag", this._n(this._solarToday, 1) + " kWh", "sedan midnatt", "g-sun"),
+        this._tg("Prognos (VRM)", "g-info"),
+        this._pair(["Idag", this._vrmN("uppskattad_energiproduktion_idag") == null ? "–" : this._n(this._vrmN("uppskattad_energiproduktion_idag"), 1) + " kWh", this._vrmN("uppskattad_energiproduktion_aterstaende_idag") != null ? "kvar " + this._n(this._vrmN("uppskattad_energiproduktion_aterstaende_idag"), 1) + " kWh" : "", "g-sun"],
+          ["Imorgon", this._vrmN("beraknad_energiproduktion_imorgon") == null ? "–" : this._n(this._vrmN("beraknad_energiproduktion_imorgon"), 1) + " kWh", this._vrmT("hogsta_rusningstid_imorgon") ? "topp " + this._vrmT("hogsta_rusningstid_imorgon") : "", "g-sun"]),
+        this._tg(this._rng()[0].toUpperCase() + this._rng().slice(1), "g-sun"),
+        this._tile("Totalt", this._n(tot, 1) + " kWh", this._dRange === "7d" ? "snitt " + this._n(tot / 7, 1) + " kWh/dygn" : "", "g-sun"),
+        this._tile("Topp", pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : "", "g-sun"),
+        this._tile("Sedan start", ys ? this._n(parseFloat(ys.state), 0) + " " + (ys.attributes.unit_of_measurement || "") : "–", "Fronius totalt", "g-sun"),
       ],
       charts: [this._dChart("Solproduktion", [{ color: "#ffc83d", pts: d.sol, area: true }], { unit: "kW", d: 2 })],
     };
@@ -949,14 +958,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const avg = d.hus.length ? d.hus.reduce((a, r) => a + r.v, 0) / d.hus.length : null;
     return {
       tiles: [
-        this._tile("Just nu", this._n(now, 2) + " kW", "utan billaddning"),
-        this._tile("Snitt " + this._rng(), this._n(avg, 2) + " kW"),
-        this._tile("Topp", pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : ""),
-        this._tile("Förbrukat " + this._rng(), this._n(tot, 1) + " kWh", "hus utan bil"),
-        this._tile("Billaddning " + this._rng(), this._n(tcar, 1) + " kWh", tot + tcar > 0 ? Math.round((tcar / (tot + tcar)) * 100) + " % av all förbrukning" : ""),
-        this._tile("Självförsörjning nu", (this.shadowRoot.getElementById("v-selfsuff") || {}).textContent || "–"),
+        this._tg("Just nu", "g-house"),
+        this._tile("Husförbrukning", this._n(now, 2) + " kW", "utan billaddning", "g-house"),
+        this._tile("Självförsörjning", (this.shadowRoot.getElementById("v-selfsuff") || {}).textContent || "–", "sol + batteri av husets last", "g-sell"),
+        this._tg("Förbrukat " + this._rng(), "g-house"),
+        this._pair(["Hus", this._n(tot, 1) + " kWh", "utan bil", "g-house"], ["Billaddning", this._n(tcar, 1) + " kWh", tot + tcar > 0 ? Math.round((tcar / (tot + tcar)) * 100) + " % av allt" : "", "g-car"]),
+        this._pair(["Snitt (hus)", this._n(avg, 2) + " kW", "", "g-house"], ["Topp (hus)", pk ? this._n(pk.v, 2) + " kW" : "–", pk ? this._dayHm(pk.t) : "", "g-house"]),
       ],
-      charts: [this._dChart("Husförbrukning (utan bil)", [{ name: "Hus", color: "#5ab0ff", pts: d.hus, area: true }, { name: "Bil", color: "#3ddc84", pts: d.car }], { unit: "kW", d: 2 })],
+      charts: [this._dChart("Husförbrukning (utan bil)", [{ name: "Hus", color: "#5ab0ff", pts: d.hus, area: true }, { name: "Bil", color: "#c58bff", pts: d.car }], { unit: "kW", d: 2 })],
     };
   }
   _dTab_batt(d) {
@@ -967,13 +976,15 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const bc = this._battCost;
     return {
       tiles: [
-        this._tile("Laddning", this._n(soc, 0) + " %", "≈ " + this._n((soc || 0) / 100 * cap, 1) + " av " + this._n(cap, 0) + " kWh"),
-        this._tile("Effekt nu", this._n(Math.abs(p), 2) + " kW", p > 0.05 ? "laddar" : p < -0.05 ? "urladdar" : "vilar"),
-        this._tile(p < -0.05 ? "Tid kvar" : "Tid till full", est, estSub),
-        this._tile("Laddat " + this._rng(), this._n(d.chg, 1) + " kWh"),
-        this._tile("Urladdat " + this._rng(), this._n(d.dis, 1) + " kWh"),
-        this._tile("Spänning / ström", this._n(this._num("battery_voltage"), 1) + " V · " + this._n(this._num("battery_current"), 1) + " A"),
-        this._tile("Energins kostnad", bc ? "0–" + this._n(bc.cMax, 2) + " kr/kWh" : "–", bc ? "beräknad (ej mätt): ≈ " + this._n(bc.c, 2) + " kr/kWh" : ""),
+        this._tg("Just nu", "g-batt"),
+        this._tile("Laddning", this._n(soc, 0) + " %", "≈ " + this._n((soc || 0) / 100 * cap, 1) + " av " + this._n(cap, 0) + " kWh", "g-batt"),
+        this._tile("Effekt nu", this._n(Math.abs(p), 2) + " kW", p > 0.05 ? "laddar" : p < -0.05 ? "urladdar" : "vilar", p > 0.05 ? "g-sell" : p < -0.05 ? "g-buy" : "g-info"),
+        this._tile(p < -0.05 ? "Tid kvar" : "Tid till full", est, estSub, "g-batt"),
+        this._tg("Energi " + this._rng(), "g-batt"),
+        this._pair(["↑ Laddat", this._n(d.chg, 1) + " kWh", "", "g-sell"], ["↓ Urladdat", this._n(d.dis, 1) + " kWh", "", "g-buy"]),
+        this._tg("Övrigt", "g-info"),
+        this._tile("Spänning / ström", this._n(this._num("battery_voltage"), 1) + " V · " + this._n(this._num("battery_current"), 1) + " A", "", "g-info"),
+        this._tile("Energins kostnad", bc ? "0–" + this._n(bc.cMax, 2) + " kr/kWh" : "–", bc ? "beräknad (ej mätt): ≈ " + this._n(bc.c, 2) + " kr/kWh" : "", "g-price"),
       ],
       charts: [
         this._minSocCard(),
@@ -1067,13 +1078,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const rows = Object.keys(mon).sort().map((m) => { const o = mon[m]; return '<div class="sp-row"><b>' + mn[parseInt(m.slice(5), 10) - 1] + " " + m.slice(0, 4) + "</b><span>" + f0(o.net) + " kr</span><span>" + this._n(o.dg, 0) + " kWh köpt el använd</span><span>" + this._n(o.ds, 0) + " kWh sol-el, " + f0(o.avS) + " kr</span></div>"; }).join("");
     const toggle = '<div class="fr-row" style="margin:6px 0"><button class="fr-b' + (eff === "93" ? " on" : "") + '" data-action="spar-eff" data-eff="93">Med förluster (93 %)</button><button class="fr-b' + (eff === "100" ? " on" : "") + '" data-action="spar-eff" data-eff="100">Utan förluster</button></div>';
     const tiles = [
-      this._tile("Vinst totalt", f0(net) + " kr", "sedan " + since),
-      this._tile("Denna månad", f0((mon[curM] || { net: 0 }).net) + " kr", "förra månaden: " + f0((mon[prevM] || { net: 0 }).net) + " kr"),
-      this._tile("Billig el köpt in", this._n(T.chgG, 0) + " kWh", f0(T.spend) + " kr · snitt " + f2(T.spend / (T.chgG || 1)) + " kr/kWh"),
-      this._tile("Använd av den", this._n(T.dg, 0) + " kWh", "ersatte inköp á " + f2(T.avG / ((T.dg * (eff === "100" ? 1 : 0.93)) || 1)) + " kr/kWh"),
-      this._tile("Inköp som slapp köpas", f0(T.avG) + " kr", "kostade " + f0(T.cost) + " kr att lagra"),
-      this._tile("Kvar i batteriet (köpt el)", this._n(R.Sg, 1) + " kWh", "inköpt för " + f2(R.cg) + " kr/kWh"),
-      this._tile("Sol-el via batteriet", f0(T.avS) + " kr", this._n(T.ds, 0) + " kWh, gratis el som slapp köpas"),
+      this._tg("Vinst", "g-sell"),
+      this._pair(["Totalt", f0(net) + " kr", "sedan " + since, "g-sell"], ["Denna månad", f0((mon[curM] || { net: 0 }).net) + " kr", "förra månaden: " + f0((mon[prevM] || { net: 0 }).net) + " kr", "g-sell"]),
+      this._tg("Billig el från nätet", "g-buy"),
+      this._pair(["Köpt in", this._n(T.chgG, 0) + " kWh", f0(T.spend) + " kr · snitt " + f2(T.spend / (T.chgG || 1)) + " kr/kWh", "g-buy"], ["Använd av den", this._n(T.dg, 0) + " kWh", "ersatte inköp á " + f2(T.avG / ((T.dg * (eff === "100" ? 1 : 0.93)) || 1)) + " kr/kWh", "g-sell"]),
+      this._pair(["Inköp som slapp köpas", f0(T.avG) + " kr", "kostade " + f0(T.cost) + " kr att lagra", "g-sell"], ["Kvar i batteriet", this._n(R.Sg, 1) + " kWh", "inköpt för " + f2(R.cg) + " kr/kWh", "g-batt"]),
+      this._tg("Sol-el", "g-sun"),
+      this._tile("Sol-el via batteriet", f0(T.avS) + " kr", this._n(T.ds, 0) + " kWh, gratis el som slapp köpas", "g-sun"),
     ];
     const daily = R.list.map((x) => ({ t: x.t, v: x.net }));
     const cum = R.list.map((x) => ({ t: x.t, v: x.cum }));
@@ -1145,17 +1156,17 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const net = cost - rev, avgP = kBuy > 0 ? cost / kBuy : null;
     return {
       tiles: [
-        this._tile("Kostnad från nätet " + this._rng(), this._n(cost, cost < 100 ? 1 : 0) + " kr", kBuy > 0 ? this._n(kBuy, 1) + " kWh · snitt " + this._n(avgP, 2) + " kr/kWh" : "", "d-hi"),
-        this._tile("Intäkt såld el " + this._rng(), this._n(rev, 1) + " kr", kSell > 0 ? this._n(kSell, 1) + " kWh · spotpris" : ""),
-        this._tile("Netto " + this._rng(), this._n(net, net > -100 && net < 100 ? 1 : 0) + " kr", (net > 0 ? "du har betalat" : "du har tjänat") + (this._dRange === "7d" ? " · snitt " + this._n(net / 7, 1) + " kr/dygn" : "") + (miss ? " · " + miss + " pkt utan pris" : "")),
-        this._tile("Just nu", this._n(Math.abs(now), 2) + " kW", now > 0.05 ? "köper från nätet" : now < -0.05 ? "säljer till nätet" : "balans"),
-        this._tile("Köpt " + this._rng(), this._n(buy, 1) + " kWh"),
-        this._tile("Sålt " + this._rng(), this._n(sell, 1) + " kWh"),
-        this._tile("Högsta köp", imp && imp.v > 0 ? this._n(imp.v, 2) + " kW" : "–", imp && imp.v > 0 ? this._dayHm(imp.t) : ""),
-        this._tile("Högsta sälj", exp && exp.v > 0 ? this._n(exp.v, 2) + " kW" : "–", exp && exp.v > 0 ? this._dayHm(exp.t) : ""),
-        this._tile("Fasbelastning L1 / L2 / L3", ph + " W"),
-        this._tile("Idag köpt", this._n(tb, 1) + " kWh", tc != null ? "kostnad " + this._n(tc, 0) + " kr" : ""),
-        this._tile("Idag sålt", this._n(ts, 1) + " kWh", tr != null ? "ersättning " + this._n(tr, 0) + " kr" : ""),
+        this._tg("Just nu", now > 0.05 ? "g-buy" : now < -0.05 ? "g-sell" : "g-info"),
+        this._tile("Effekt", this._n(Math.abs(now), 2) + " kW", now > 0.05 ? "köper från nätet" : now < -0.05 ? "säljer till nätet" : "balans", now > 0.05 ? "g-buy" : now < -0.05 ? "g-sell" : "g-info"),
+        this._tile("Fasbelastning L1 / L2 / L3", ph + " W", "", "g-info"),
+        this._tg("Pengar " + this._rng(), "g-price"),
+        this._pair(["Kostnad (köpt)", this._n(cost, cost < 100 ? 1 : 0) + " kr", kBuy > 0 ? "snitt " + this._n(avgP, 2) + " kr/kWh" : "", "g-buy"], ["Intäkt (sålt)", this._n(rev, 1) + " kr", kSell > 0 ? "spotpris" : "", "g-sell"]),
+        this._tile("Netto", this._n(net, net > -100 && net < 100 ? 1 : 0) + " kr", (net > 0 ? "du har betalat" : "du har tjänat") + (this._dRange === "7d" ? " · snitt " + this._n(net / 7, 1) + " kr/dygn" : "") + (miss ? " · " + miss + " pkt utan pris" : ""), net > 0 ? "g-buy" : "g-sell"),
+        this._tg("Energi " + this._rng(), "g-info"),
+        this._pair(["Köpt", this._n(buy, 1) + " kWh", "", "g-buy"], ["Sålt", this._n(sell, 1) + " kWh", "", "g-sell"]),
+        this._pair(["Högsta köp", imp && imp.v > 0 ? this._n(imp.v, 2) + " kW" : "–", imp && imp.v > 0 ? this._dayHm(imp.t) : "", "g-buy"], ["Högsta sälj", exp && exp.v > 0 ? this._n(exp.v, 2) + " kW" : "–", exp && exp.v > 0 ? this._dayHm(exp.t) : "", "g-sell"]),
+        this._tg("Idag (enligt Tibber)", "g-price"),
+        this._pair(["Köpt idag", this._n(tb, 1) + " kWh", tc != null ? "kostnad " + this._n(tc, 0) + " kr" : "", "g-buy"], ["Sålt idag", this._n(ts, 1) + " kWh", tr != null ? "ersättning " + this._n(tr, 0) + " kr" : "", "g-sell"]),
       ],
       charts: [
         this._dChart("Nätets effekt (över 0 = köper, under 0 = säljer)", [{ legend: [["#ff7a59", "Köper"], ["#3ddc84", "Säljer"]], color: "#ff7a59", split: ["#ff7a59", "#3ddc84"], pts: d.grid }], { unit: "kW", d: 2 }),
@@ -1174,13 +1185,16 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const evs = (this._events || []).filter((e) => e.icon === "🔌");
     return {
       tiles: [
-        this._tile("Status", stTxt, car ? car.name + " · " + car.phases + (car.phases > 1 ? " faser" : " fas") : ""),
-        this._tile("Effekt nu", this._n(p, 2) + " kW", "ström L1/L2/L3: " + cur + " A"),
-        this._tile("Denna session", sess != null ? this._n(sess, 1) + " kWh" : "–", sc && isFinite(sc.cost) ? "kostnad ≈ " + this._n(sc.cost, 1) + " kr · " + (sc.gridPct != null ? sc.gridPct + " % från nätet" : "") : ""),
-        this._tile("V60 laddning", soc != null ? this._n(soc, 0) + (tgt != null ? " → " + this._n(tgt, 0) : "") + " %" : "–"),
-        this._tile("Laddat " + this._rng(), this._n(tot, 1) + " kWh", pk ? "högst " + this._n(pk.v, 2) + " kW" : ""),
+        this._tg("Laddbox just nu", "g-car"),
+        this._tile("Status", stTxt, car ? car.name + " · " + car.phases + (car.phases > 1 ? " faser" : " fas") : "", "g-car"),
+        this._tile("Effekt nu", this._n(p, 2) + " kW", "ström L1/L2/L3: " + cur + " A", "g-car"),
+        this._tg("Denna laddning", "g-car"),
+        this._pair(["Session", sess != null ? this._n(sess, 1) + " kWh" : "–", "", "g-car"], ["Kostnad", sc && isFinite(sc.cost) ? "≈ " + this._n(sc.cost, 1) + " kr" : "–", sc && sc.gridPct != null ? sc.gridPct + " % från nätet" : "", "g-buy"]),
+        this._tile("V60 batteri", soc != null ? this._n(soc, 0) + (tgt != null ? " → " + this._n(tgt, 0) : "") + " %" : "–", "nivå → mål", "g-batt"),
+        this._tg(this._rng()[0].toUpperCase() + this._rng().slice(1), "g-car"),
+        this._tile("Laddat", this._n(tot, 1) + " kWh", pk ? "högst " + this._n(pk.v, 2) + " kW" : "", "g-car"),
       ],
-      charts: [this._dChart("Laddeffekt", [{ color: "#3ddc84", pts: d.car, area: true }], { unit: "kW", d: 2, h: 190 })],
+      charts: [this._dChart("Laddeffekt", [{ color: "#c58bff", pts: d.car, area: true }], { unit: "kW", d: 2, h: 190 })],
       extra: '<div class="d-ct">Laddningar senaste dygnet <span class="d-note">kostnad = nätandel × Tibber-pris, sol och batteri räknas som gratis</span></div>' + (evs.length ? evs.map((e) => '<div class="ev ev-green"><div class="ev-t">' + e.title + '</div><div class="ev-d">' + e.detail + "</div></div>").join("") : '<div class="d-empty">Inga laddningar senaste dygnet</div>'),
     };
   }
@@ -1386,12 +1400,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     });
     const avail = socNow != null ? Math.max(0, ((socNow - floor) / 100) * cap) : null;
     const cs = slotAt(now);
-    const tiles = res.map((r) => this._tile(r.a.ic + " " + r.a.n, r.head,
+    const tiles = [this._tg("Kör nu eller vänta?", "g-price")].concat(res.map((r) => this._tile(r.a.ic + " " + r.a.n, r.head,
       "nu ≈ " + this._n(r.cur.cost, 2) + " kr" + (r.cur.bat > 0 ? " (" + Math.round(r.pct * 100) + " % från batteri)" : " (från nätet)") + (r.cls ? "" : " · ingen stor vinst att vänta") +
-      (r.save >= Math.max(0.3, r.cur.cost * 0.15) ? " · bäst " + this._dayHm(r.best.s) + " ≈ " + this._n(r.best.cost, 2) + " kr" : ""), r.cls));
-    tiles.push(this._tile("Batteri nu", socNow != null ? this._n(socNow, 0) + " %" : "–", avail != null ? "≈ " + this._n(avail, 1) + " kWh över lägsta nivå (" + this._n(floor, 0) + " %)" : ""));
-    tiles.push(this._tile("Planen just nu", cs ? sName(cs.strat) : "–", cs ? "målnivå " + this._n(cs.target, 0) + " %" : P && P.error ? "plan ej läsbar" : "väntar på plan"));
-    tiles.push(this._tile("Batterienergin värderas till", this._n(cb, 2) + " kr/kWh", "billigaste kommande timpris " + this._n(minP, 2) + " kr / " + eff + " verkningsgrad"));
+      (r.save >= Math.max(0.3, r.cur.cost * 0.15) ? " · bäst " + this._dayHm(r.best.s) + " ≈ " + this._n(r.best.cost, 2) + " kr" : ""), r.cls || "g-sell")));
+    tiles.push(this._tg("Underlag", "g-info"));
+    tiles.push(this._tile("Batteri nu", socNow != null ? this._n(socNow, 0) + " %" : "–", avail != null ? "≈ " + this._n(avail, 1) + " kWh över lägsta nivå (" + this._n(floor, 0) + " %)" : "", "g-batt"));
+    tiles.push(this._tile("Planen just nu", cs ? sName(cs.strat) : "–", cs ? "målnivå " + this._n(cs.target, 0) + " %" : P && P.error ? "plan ej läsbar" : "väntar på plan", "g-info"));
+    tiles.push(this._tile("Batterienergin värderas till", this._n(cb, 2) + " kr/kWh", "billigaste kommande timpris " + this._n(minP, 2) + " kr / " + eff + " verkningsgrad", "g-price"));
     const rows = res.map((r) => '<div class="d-ct">' + r.a.ic + " " + r.a.n + ' <span class="d-note">antar ' + this._n(r.a.kwh, 1) + " kWh över " + this._n(r.a.h, 1) + " tim</span></div>" +
       r.top.map((x, i) => '<div class="ev' + (i === 0 ? " ev-green" : "") + '"><div class="ev-t">' + (x.s === r.cur.s ? "Starta nu" : "Starta " + this._dayHm(x.s)) + ' · ≈ ' + this._n(x.cost, 2) + ' kr</div><div class="ev-d">' + (x.bat > 0 ? Math.round((x.bat / r.a.kwh) * 100) + " % från batteriet" : "från nätet till timpris") + "</div></div>").join("")).join("");
     const price = H.filter((r) => r.t + 3600e3 > now && r.t < now + 30 * 3600e3).map((r) => ({ t: r.t, v: r.price }));
@@ -1418,14 +1433,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const pLo = pr.length ? Math.floor(Math.min.apply(null, pr) - 1) : 990, pHi = pr.length ? Math.ceil(Math.max.apply(null, pr) + 1) : 1030;
     return {
       tiles: [
-        this._tile("Vind nu", ms(nowW), dir != null ? dirTxt(dir) + " " + Math.round(dir) + "°" : ""),
-        this._tile("Byvind nu", ms(nowG)),
-        this._tile("Högsta byvind " + this._rng(), gmax ? this._n(gmax.v, 1) + " m/s" : "–", gmax ? this._dayHm(gmax.t) : ""),
-        this._tile("Medelvind " + this._rng(), this._n(wavg, 1) + " m/s", wmax ? "mest " + this._n(wmax.v, 1) + " m/s (timmedel) " + this._dayHm(wmax.t) : ""),
-        this._tile("Vanligaste riktning", mdir != null ? dirTxt(mdir) + " " + Math.round(mdir) + "°" : "–", "viktad efter vindstyrka"),
-        this._tile("Temperatur nu", this._n(tNow, 1) + " °C", d.wtemp.length ? "snitt " + this._n(tavg, 1) + " °C" : ""),
-        this._tile("Lägst", tmin ? this._n(tmin.v, 1) + " °C" : "–", tmin ? this._dayHm(tmin.t) : ""),
-        this._tile("Högst", tmax ? this._n(tmax.v, 1) + " °C" : "–", tmax ? this._dayHm(tmax.t) : ""),
+        this._tg("Vind", "g-wind"),
+        this._pair(["Vind nu", ms(nowW), dir != null ? dirTxt(dir) + " " + Math.round(dir) + "°" : "", "g-wind"], ["Byvind nu", ms(nowG), "", "g-wind"]),
+        this._pair(["Medelvind " + this._rng(), this._n(wavg, 1) + " m/s", wmax ? "mest " + this._n(wmax.v, 1) + " m/s " + this._dayHm(wmax.t) : "", "g-wind"], ["Högsta byvind", gmax ? this._n(gmax.v, 1) + " m/s" : "–", gmax ? this._dayHm(gmax.t) : "", "g-wind"]),
+        this._tile("Vanligaste riktning", mdir != null ? dirTxt(mdir) + " " + Math.round(mdir) + "°" : "–", "viktad efter vindstyrka", "g-wind"),
+        this._tg("Temperatur ute", "g-temp"),
+        this._tile("Nu", this._n(tNow, 1) + " °C", d.wtemp.length ? "snitt " + this._n(tavg, 1) + " °C" : "", "g-temp"),
+        this._pair(["Lägst", tmin ? this._n(tmin.v, 1) + " °C" : "–", tmin ? this._dayHm(tmin.t) : "", "g-wind"], ["Högst", tmax ? this._n(tmax.v, 1) + " °C" : "–", tmax ? this._dayHm(tmax.t) : "", "g-buy"]),
         ...(d.wcoop.length || this._num("coop_temp") != null ? (() => {
           const cn = this._num("coop_temp"), cmin = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v < b.v ? r : b)) : null, cmax = d.wcoop.length ? d.wcoop.reduce((b, r) => (r.v > b.v ? r : b)) : null;
           const outAt = (r) => {
@@ -1434,12 +1448,13 @@ class GrankulleEnergyCardV2 extends HTMLElement {
             return Math.abs(o.t - r.t) > 2 * 3600e3 ? "" : '<br><span style="color:#ff5a5a;font-weight:700">ute ' + this._n(o.v, 1) + " °C</span>";
           };
           return [
-            this._tile("🐔 Hönshus nu", this._n(cn, 1) + " °C", (cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : "") + (this._num("coop_batt_v") !== null && this._num("coop_batt_v") < 2.35 ? '<br><span style="color:#ffb347;font-weight:700">⚠ Lågt batteri ' + this._n(this._num("coop_batt_v"), 2) + " V</span>" : "")),
-            this._tile("🐔 Hönshus lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) + outAt(cmin) : ""),
-            this._tile("🐔 Hönshus högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) + outAt(cmax) : ""),
+            this._tg("🐔 Hönshus", "g-coop"),
+            this._tile("Hönshus nu", this._n(cn, 1) + " °C", (cn != null && tNow != null ? '<span style="color:#ff5a5a;font-weight:700">' + (cn - tNow >= 0 ? "+" : "") + this._n(cn - tNow, 1) + " °C mot ute</span>" : "") + (this._num("coop_batt_v") !== null && this._num("coop_batt_v") < 2.35 ? '<br><span style="color:#ffb347;font-weight:700">⚠ Lågt batteri ' + this._n(this._num("coop_batt_v"), 2) + " V</span>" : ""), "g-coop"),
+            this._pair(["Lägst", cmin ? this._n(cmin.v, 1) + " °C" : "–", cmin ? this._dayHm(cmin.t) + outAt(cmin) : "", "g-coop"], ["Högst", cmax ? this._n(cmax.v, 1) + " °C" : "–", cmax ? this._dayHm(cmax.t) + outAt(cmax) : "", "g-coop"]),
           ];
         })() : []),
-        this._tile("Lufttryck", pNow != null ? this._n(pNow, 0) + " hPa" : "–", ptr != null ? (ptr >= 0 ? "+" : "") + this._n(ptr, 1) + " hPa under perioden" : ""),
+        this._tg("Lufttryck", "g-info"),
+        this._tile("Lufttryck", pNow != null ? this._n(pNow, 0) + " hPa" : "–", ptr != null ? (ptr >= 0 ? "+" : "") + this._n(ptr, 1) + " hPa under perioden" : "", "g-info"),
       ],
       charts: [
         this._dChart("Vind (m/s)", [{ name: "Medelvind", color: "#5ab0ff", pts: d.wwind, area: true }, { name: "Byvind (max)", color: "#ff9f43", pts: d.wgustMax && d.wgustMax.length ? d.wgustMax : d.wgust }], { unit: "m/s", d: 1 }),
@@ -1500,11 +1515,12 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const t1 = fut.length ? fut[fut.length - 1].t + 3600e3 : t;
     return {
       tiles: [
-        this._tile("Just nu", this._n(now, 2) + " kr/kWh", (this.shadowRoot.getElementById("v-price-lvl") || {}).textContent || ""),
-        this._tile("Snitt " + this._rng(), this._n(avg, 2) + " kr/kWh", now != null && avg ? Math.round((now / avg) * 100) + " % av snittet nu" : ""),
-        this._tile("Billigast", lo ? this._n(lo.v, 2) + " kr/kWh" : "–", lo ? this._dayHm(lo.t) : ""),
-        this._tile("Dyrast", hi ? this._n(hi.v, 2) + " kr/kWh" : "–", hi ? this._dayHm(hi.t) : ""),
-        this._tile("Billigaste 3 timmarna framåt", best ? this._n(best.a, 2) + " kr/kWh" : "–", best ? "börjar " + this._dayHm(best.t) : "väntar på morgondagens priser"),
+        this._tg("Just nu", "g-price"),
+        this._tile("Elpris nu", this._n(now, 2) + " kr/kWh", (this.shadowRoot.getElementById("v-price-lvl") || {}).textContent || "", "g-price"),
+        this._tile("Snitt " + this._rng(), this._n(avg, 2) + " kr/kWh", now != null && avg ? Math.round((now / avg) * 100) + " % av snittet nu" : "", "g-price"),
+        this._tg("Billigt och dyrt " + this._rng(), "g-info"),
+        this._pair(["Billigast", lo ? this._n(lo.v, 2) + " kr/kWh" : "–", lo ? this._dayHm(lo.t) : "", "g-sell"], ["Dyrast", hi ? this._n(hi.v, 2) + " kr/kWh" : "–", hi ? this._dayHm(hi.t) : "", "g-buy"]),
+        this._tile("Billigaste 3 timmarna framåt", best ? this._n(best.a, 2) + " kr/kWh" : "–", best ? "börjar " + this._dayHm(best.t) : "väntar på morgondagens priser", "g-sell"),
       ],
       charts: [this._dChart("Elpris per timme (streckat = kommande)", [{ name: "Historik", color: "#f2c94c", step: true, area: true, pts: past }, { name: "Kommande", color: "#ffe28a", step: true, dash: true, pts: fut }], { unit: "kr/kWh", d: 2, t1: t1 > t ? t1 : t, t0: t - this._dData.span })],
     };
@@ -2491,6 +2507,14 @@ const STYLE = `
   .d-body { padding: 14px; overflow-y: auto; min-height: 60vh; }
   .d-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
   .d-tile { background: rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 12px; }
+  .d-tg { grid-column: 1 / -1; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin: 6px 0 -2px; padding-left: 8px; border-left: 4px solid var(--gc, #9aa7b8); }
+  .d-tg:first-child { margin-top: 0; }
+  .d-pair { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0; background: none; }
+  .d-ph { border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,0.07); }
+  .d-tile[class*="g-"], .d-ph[class*="g-"] { border-left: 4px solid var(--gc); background: rgba(255,255,255,0.07); background-image: linear-gradient(90deg, color-mix(in srgb, var(--gc) 22%, transparent), transparent 85%); }
+  .g-sun { --gc: #ffc83d; } .g-house { --gc: #5ab0ff; } .g-batt { --gc: #4dd0e1; } .g-buy { --gc: #ff7a59; } .g-sell { --gc: #3ddc84; }
+  .g-car { --gc: #c58bff; } .g-price { --gc: #f2c94c; } .g-wind { --gc: #7fd1ff; } .g-temp { --gc: #ff9f7f; } .g-coop { --gc: #ffb347; } .g-info { --gc: #9aa7b8; }
+  @media (max-width: 520px) { .d-pair { grid-column: 1 / -1; } }
   .d-tile.d-warn { background: rgba(255,90,70,0.25); border: 1px solid #ff7a59; }
   .d-tl { font-size: 12px; opacity: 0.7; }
   .d-tv { font-size: 21px; font-weight: 800; margin-top: 2px; }
