@@ -104,6 +104,7 @@ const DEFAULT_ENTITIES = {
   shelly2_power: "sensor.shellyplug_s_4022d882ea60_effekt",
   zaptec_charge_switch: "switch.zaptec_laddar",
   zaptec_status: "sensor.zaptec_laddstatus",
+  ev_tibber_charging: "binary_sensor.zaptec_laddning",           // Tibber's own view of the Zaptec charger, fresher than the Zaptec cloud integration
   ev_soc: "sensor.volvo_v60_batteri",                          // official Volvo integration (was Tibber: sensor.v60_laddningsniva_soc)
   ev_soc_target: "sensor.volvo_v60_malbatteriets_laddningsniva",
   v60_heat_on: "button.volvo_v60_starta_klimatiseringen",
@@ -943,7 +944,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     };
   }
   _dTab_hus(d) {
-    const raw = ((this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))) / 1000, car = (this._num("zaptec_power", 0)) / 1000;
+    const raw = ((this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))) / 1000, car = this._ev().kw;
     const now = Math.max(0, raw - car), pk = this._peak(d.hus), tot = this._kwh(d.hus, d.dt), tcar = this._kwh(d.car, d.dt);
     const avg = d.hus.length ? d.hus.reduce((a, r) => a + r.v, 0) / d.hus.length : null;
     return {
@@ -1164,8 +1165,8 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     };
   }
   _dTab_bil(d) {
-    const car = this._whichCar(), zs = this._st("zaptec_status"), p = (this._num("zaptec_power", 0)) / 1000;
-    const stTxt = { disconnected: "Ingen bil ansluten", connected_requesting: "Ansluten · väntar på start", connected_charging: "Laddar", connected_finished: "Laddning klar" }[zs ? zs.state : ""] || (zs ? zs.state : "–");
+    const car = this._whichCar(), zs = this._st("zaptec_status"), evx = this._ev(), p = evx.kw;
+    const stTxt = evx.est ? "Laddar (uppskattad effekt)" : { disconnected: "Ingen bil ansluten", connected_requesting: "Ansluten · väntar på start", connected_charging: "Laddar", connected_finished: "Laddning klar" }[zs ? zs.state : ""] || (zs ? zs.state : "–");
     const sess = this._num("zaptec_session"), sc = this._sessCost;
     const tot = this._kwh(d.car, d.dt), pk = this._peak(d.car);
     const cur = [1, 2, 3].map((i) => this._n(this._num("zaptec_i" + i, 0), 0)).join(" / ");
@@ -1835,10 +1836,32 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!c) return;
     c.querySelectorAll(".cbtn").forEach(b => b.classList.toggle("active", b.dataset[attr] === value));
   }
+  // The Zaptec cloud values can lag or freeze (status stuck on "finished", power 0 W) while the charger really charges.
+  // Tibber's Zaptec binary sensor is fresher: when it says "charging" and Zaptec doesn't, the EV power is estimated as house load minus the usual base load.
+  _ev() {
+    const now = Date.now(), zs = this._st("zaptec_status"), zp = (this._num("zaptec_power", 0) || 0) / 1000;
+    const tib = this._st("ev_tibber_charging"), tOn = !!tib && tib.state === "on";
+    const raw = ((this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))) / 1000;
+    const zCharging = (zs && zs.state === "connected_charging") || zp > 0.3;
+    if (!zCharging && !tOn && (!this._evBaseAt || now - this._evBaseAt > 20e3)) {
+      const b = this._evBase != null ? this._evBase : raw;
+      this._evBase = b * 0.9 + Math.min(Math.max(raw, 0.2), 4) * 0.1; this._evBaseAt = now;
+    }
+    if (zCharging) { if (zp > 1.5) this._evLast = zp; return { kw: zp, est: false, charging: true }; }
+    if (tOn && zs && zs.state !== "disconnected") {
+      const est = Math.min(this._evLast ? this._evLast * 1.05 : 7.4, Math.max(0, raw - (this._evBase != null ? this._evBase : 0.8)));
+      if (est >= 1.5) return { kw: est, est: true, charging: true };
+    }
+    return { kw: zp, est: false, charging: false };
+  }
   // Which car is on the Zaptec: 1 active phase = Nissan Leaf, 2+ phases = V60. null when not charging.
   _whichCar() {
     const zs = this._st("zaptec_status");
-    if (!zs || zs.state !== "connected_charging") return null;
+    if (!zs || zs.state !== "connected_charging") {
+      const ev = this._ev();
+      if (ev.est) { const n = ev.kw > 4.2 ? 2 : 1; return { phases: n, name: n === 1 ? "Nissan Leaf" : "V60", short: n === 1 ? "LEAF" : "V60", est: true }; }
+      return null;
+    }
     const n = ["zaptec_i1", "zaptec_i2", "zaptec_i3"].filter((k) => (this._num(k, 0) || 0) > 3).length;
     if (n === 0) return null;
     return { phases: n, name: n === 1 ? "Nissan Leaf" : "V60", short: n === 1 ? "LEAF" : "V60" };
@@ -1846,14 +1869,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _updateControls() {
     const ZSTAT = { connected_charging: "Laddar", connected_finished: "Laddning klar", connected_requesting: "Väntar på start", disconnected: "Ej ansluten" };
     const zs = this._st("zaptec_status");
-    const zp = this._num("zaptec_power", 0);
+    const evx = this._ev(), zp = evx.kw * 1000;
     const car = this._whichCar();
     const evSoc2 = this._num("ev_soc"), evTgt = this._num("ev_soc_target");
     const sessK = this._num("zaptec_session");
     const connected = zs && zs.state !== "disconnected";
     const carTxt = (car ? " · " + car.name + " (" + car.phases + " fas" + (car.phases > 1 ? "er" : "") + ")" : "") + (connected && sessK !== null ? " · " + sessK.toFixed(1) + " kWh denna session" + (this._sessCostTxt() ? " · " + this._sessCostTxt() : "") : "");
     const evTxt = carTxt + (evSoc2 !== null && (!car || car.name === "V60") ? " · V60 " + (this._v60stale ? "≈ " : "") + Math.round(evSoc2) + "%" + (this._v60stale ? " (" + this._v60age + " gammal)" : (evTgt !== null ? " → " + Math.round(evTgt) + "%" : "")) : "");
-    this._set("c-zaptec-status", zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
+    this._set("c-zaptec-status", zs ? ((evx.est ? "Laddar (enligt Tibber)" : (ZSTAT[zs.state] || zs.state)) + " · " + (evx.est ? "≈ " : "") + this._fmt(zp / 1000, 2, " kW") + evTxt) : "–");
     const zm = this._st("zaptec_mode");
     this._markActive("c-zaptec-modes", "mode", zm ? zm.state : "");
     if (!zm) this._set("c-zaptec-status", (zs ? ((ZSTAT[zs.state] || zs.state) + " · " + this._fmt(zp / 1000, 2, " kW")) : "–") + " · läge saknas");
@@ -2094,7 +2117,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     this._applyStationWind();
 
     const solar = (this._num("fronius_power", 0)) / 1000;
-    const zaptec = (this._num("zaptec_power", 0)) / 1000;
+    const evNow = this._ev(), zaptec = evNow.kw;
     const houseRaw = (
       (this._num("house_power_l1", 0)) + (this._num("house_power_l2", 0)) + (this._num("house_power_l3", 0))
     ) / 1000;
@@ -2126,14 +2149,14 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const carNow = this._whichCar();
     const sessKwh = this._num("zaptec_session");
     const zst = this._st("zaptec_status") ? this._st("zaptec_status").state : "";
-    this._set("tag-v-ev", this._fmt(zaptec, 2, " kW"));
+    this._set("tag-v-ev", (evNow.est ? "≈ " : "") + this._fmt(zaptec, 2, " kW"));
     this._set("tag-l-ev", carNow ? "LADDBOX · " + carNow.short + " LADDAR" : "LADDBOX");
     const sessTxt = sessKwh !== null ? sessKwh.toFixed(1) + " kWh" : "–";
     const costTxt = this._sessCostTxt();
     this._set("tag-s3-ev", costTxt && zst !== "disconnected" ? "Kostnad " + costTxt + (this._sessCost && this._sessCost.gridPct != null ? " · " + this._sessCost.gridPct + " % nät" : "") : "");
     if (carNow) {
       this._set("tag-s1-ev", sessTxt + " denna session");
-      this._set("tag-s2-ev", carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A");
+      this._set("tag-s2-ev", carNow.est ? "Effekt uppskattad · Zaptec släpar efter" : carNow.phases + (carNow.phases > 1 ? " faser" : " fas") + " · " + (this._num("zaptec_i1", 0) + this._num("zaptec_i2", 0) + this._num("zaptec_i3", 0)).toFixed(0) + " A");
     } else if (zst === "connected_finished") {
       this._set("tag-s1-ev", "Laddning klar · " + sessTxt + " laddat");
       this._set("tag-s2-ev", "Bil ansluten");
