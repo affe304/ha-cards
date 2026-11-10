@@ -432,7 +432,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       if (!t) { return; }
       const a = t.dataset.action;
       // clear confirmation for buttons that send something (not for navigation inside the card)
-      if (btn && !/^(detail-|toggle-controls|spar-eff)/.test(a)) this._toast("✓ Skickat · " + (btn.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
+      if (btn && !/^(detail-|toggle-controls|spar-eff|spar-all)/.test(a)) this._toast("✓ Skickat · " + (btn.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40));
       if (a === "detail-open") this._openDetail(t.dataset.tab);
       else if (a === "detail-tab") { this._dTab = t.dataset.tab; this._renderDetail(); if (this._dTab === "plan" || this._dTab === "vit") this._loadPlan(); }
       else if (a === "detail-range") { this._dRange = t.dataset.range; this._renderDetail(); this._loadDetail(); }
@@ -450,6 +450,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       else if (a === "batt-full") this._battFull();
       else if (a === "frame") this._frame(t.dataset.do);
       else if (a === "spar-eff") { this._sparEff = t.dataset.eff; this._renderDetail(); }
+      else if (a === "spar-all") { this._sparAll = !this._sparAll; this._renderDetail(); }
       else if (a === "minsoc") this._setMinSoc(t.dataset.v != null ? parseFloat(t.dataset.v) : null, t.dataset.d ? parseFloat(t.dataset.d) : 0);
       else if (a === "frame-key") this._frameKey(t.dataset.key, t.dataset.hold);
       else if (a === "frame-src") { this._svc("media_player", "select_source", "frame_player", { source: t.dataset.src }); this._frameRefresh(); }
@@ -1039,23 +1040,25 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       const run = (eff) => {
         let Sg = 0, Ss = Math.max(0.2, ((mean("soc", times[0]) != null ? mean("soc", times[0]) : 50) / 100) * cap), cg = 0, lastP = 1;
         const days = {}, tot = { chgG: 0, acG: 0, spend: 0, chgS: 0, dg: 0, ds: 0, avG: 0, cost: 0, avS: 0 };
+        const dayOf = (t) => { const k = dayKey(t); return days[k] || (days[k] = { t, chgG: 0, spend: 0, chgS: 0, dg: 0, ds: 0, avG: 0, cost: 0, avS: 0, net: 0, endSg: 0, endCg: 0 }); };
         times.forEach((t) => {
           let p = mean("price", t); if (p == null) p = lastP; else lastP = p;
           const ec = chg("dcc", t), ed = chg("dcd", t), gi = chg("gin", t), pv = chg("pv", t);
           const gs = gi + pv > 0 ? gi / (gi + pv) : ec > 0 ? 1 : 0;
-          if (ec > 0) { const eg = ec * gs, es = ec - eg, spend = (eg / eff) * p; cg = (Sg * cg + spend) / (Sg + eg || 1); Sg += eg; Ss += es; tot.chgG += eg; tot.acG += eg / eff; tot.spend += spend; tot.chgS += es; }
+          if (ec > 0) { const eg = ec * gs, es = ec - eg, spend = (eg / eff) * p; cg = (Sg * cg + spend) / (Sg + eg || 1); Sg += eg; Ss += es; tot.chgG += eg; tot.acG += eg / eff; tot.spend += spend; tot.chgS += es; const od = dayOf(t); od.chgG += eg; od.spend += spend; od.chgS += es; }
           if (ed > 0) {
             const S = Sg + Ss; let dg = S > 0 ? (ed * Sg) / S : 0, ds = ed - dg; dg = Math.min(dg, Sg); ds = Math.min(ds, Ss);
-            const k = dayKey(t), o = days[k] = days[k] || { t, dg: 0, net: 0, ds: 0, avS: 0, avG: 0 };
+            const o = dayOf(t);
             const avG = dg * eff * p, cost = dg * cg, avS = ds * eff * p;
-            o.dg += dg; o.net += avG - cost; o.ds += ds; o.avS += avS; o.avG += avG;
+            o.dg += dg; o.net += avG - cost; o.ds += ds; o.avS += avS; o.avG += avG; o.cost += cost;
             tot.dg += dg; tot.ds += ds; tot.avG += avG; tot.cost += cost; tot.avS += avS; Sg -= dg; Ss -= ds;
           }
           // keep the stock within what the battery can really hold (the charge/discharge counters drift apart over months)
           const so = mean("soc", t);
           if (so != null) { const S2 = Sg + Ss, tg = (so / 100) * cap; if (S2 > tg && S2 > 0) { const kk = Math.max(0.2, tg) / S2; Sg *= kk; Ss *= kk; } }
+          const od2 = dayOf(t); od2.endSg = Sg; od2.endCg = cg;
         });
-        const list = Object.keys(days).sort().map((k) => Object.assign({ day: k }, days[k]));
+        const list = Object.keys(days).sort().map((k) => Object.assign({ day: k }, days[k])).filter((x) => x.chgG + x.chgS + x.dg + x.ds > 0.05);
         let cum = 0; list.forEach((x) => { cum += x.net; x.cum = cum; });
         return { list, tot, Sg, cg, from: times[0] };
       };
@@ -1068,34 +1071,70 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     const S = this._spar;
     if (!S || S.error) return { tiles: [], charts: ['<div class="d-empty">Kunde inte räkna ut besparingen' + (S && S.error ? ": " + S.error : "") + ".</div>"] };
     const eff = this._sparEff === "100" ? "100" : "93", R = eff === "100" ? S.e100 : S.e93, T = R.tot;
-    const f0 = (x) => Math.round(x).toLocaleString("sv-SE"), f2 = (x) => this._n(x, 2);
-    const net = T.avG - T.cost;
+    const f0 = (x) => Math.round(x).toLocaleString("sv-SE"), f1 = (x) => this._n(x, 1), f2 = (x) => this._n(x, 2);
+    const sg = (x, d) => (x > 0.049 ? "+" : x < -0.049 ? "−" : "") + this._n(Math.abs(x), d == null ? 1 : d);
+    const net = T.avG - T.cost, e = eff === "100" ? 1 : 0.93;
     const since = new Date(R.from).toLocaleDateString("sv-SE", { day: "numeric", month: "long" });
-    const mon = {};
-    R.list.forEach((x) => { const m = x.day.slice(0, 7), o = mon[m] = mon[m] || { net: 0, dg: 0, avG: 0, ds: 0, avS: 0 }; o.net += x.net; o.dg += x.dg; o.avG += x.avG; o.ds += x.ds; o.avS += x.avS; });
     const mn = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
-    const nowD = new Date(), curM = nowD.getFullYear() + "-" + String(nowD.getMonth() + 1).padStart(2, "0"), pd = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1), prevM = pd.getFullYear() + "-" + String(pd.getMonth() + 1).padStart(2, "0");
-    const rows = Object.keys(mon).sort().map((m) => { const o = mon[m]; return '<div class="sp-row"><b>' + mn[parseInt(m.slice(5), 10) - 1] + " " + m.slice(0, 4) + "</b><span>" + f0(o.net) + " kr</span><span>" + this._n(o.dg, 0) + " kWh köpt el använd</span><span>" + this._n(o.ds, 0) + " kWh sol-el, " + f0(o.avS) + " kr</span></div>"; }).join("");
+    const dk = (d) => d.toLocaleDateString("sv-SE", { timeZone: "Europe/Stockholm" });
+    const todayK = dk(new Date()), yestK = dk(new Date(Date.now() - 86400e3));
+    const byDay = {}; R.list.forEach((x) => { byDay[x.day] = x; });
+    const mon = {}; R.list.forEach((x) => { const m = x.day.slice(0, 7), o = mon[m] = mon[m] || { net: 0, dg: 0, avG: 0, cost: 0, ds: 0, avS: 0, chgG: 0, spend: 0 }; ["net", "dg", "avG", "cost", "ds", "avS", "chgG", "spend"].forEach((k) => { o[k] += x[k]; }); });
+    const curM = todayK.slice(0, 7), prevM = dk(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)).slice(0, 7);
+    const dayName = (k) => { const d = new Date(k + "T12:00:00"); return d.toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" }).replace(".", ""); };
+    const asc = (x) => x.dg > 0.05 ? x.avG / (x.dg * e) : null;      // price of the electricity the battery replaced (kr/kWh)
+    const bp = (x) => x.chgG > 0.05 ? x.spend / x.chgG : null;       // average price paid when charging from the grid (kr/kWh)
     const toggle = '<div class="fr-row" style="margin:6px 0"><button class="fr-b' + (eff === "93" ? " on" : "") + '" data-action="spar-eff" data-eff="93">Med förluster (93 %)</button><button class="fr-b' + (eff === "100" ? " on" : "") + '" data-action="spar-eff" data-eff="100">Utan förluster</button></div>';
+    const yd = byDay[yestK], td = byDay[todayK];
+    const dayTile = (x, label, cls) => this._tile(label, x ? sg(x.net, 1) + " kr" : "–", x ? (bp(x) != null ? "köpte in " + f1(x.chgG) + " kWh à " + f2(bp(x)) : "ingen nätladdning") + " · använde " + f1(x.dg) + " kWh" : "ingen data", x && x.net < 0 ? "g-buy" : cls);
     const tiles = [
-      this._tg("Vinst", "g-sell"),
+      this._tg("Vinst av batteriet", "g-sell"),
       this._pair(["Totalt", f0(net) + " kr", "sedan " + since, "g-sell"], ["Denna månad", f0((mon[curM] || { net: 0 }).net) + " kr", "förra månaden: " + f0((mon[prevM] || { net: 0 }).net) + " kr", "g-sell"]),
-      this._tg("Billig el från nätet", "g-buy"),
-      this._pair(["Köpt in", this._n(T.chgG, 0) + " kWh", f0(T.spend) + " kr · snitt " + f2(T.spend / (T.chgG || 1)) + " kr/kWh", "g-buy"], ["Använd av den", this._n(T.dg, 0) + " kWh", "ersatte inköp á " + f2(T.avG / ((T.dg * (eff === "100" ? 1 : 0.93)) || 1)) + " kr/kWh", "g-sell"]),
-      this._pair(["Inköp som slapp köpas", f0(T.avG) + " kr", "kostade " + f0(T.cost) + " kr att lagra", "g-sell"], ["Kvar i batteriet", this._n(R.Sg, 1) + " kWh", "inköpt för " + f2(R.cg) + " kr/kWh", "g-batt"]),
-      this._tg("Sol-el", "g-sun"),
-      this._tile("Sol-el via batteriet", f0(T.avS) + " kr", this._n(T.ds, 0) + " kWh, gratis el som slapp köpas", "g-sun"),
+      this._pair(["Igår", yd ? sg(yd.net, 1) + " kr" : "–", yd ? (bp(yd) != null ? "köpte in à " + f2(bp(yd)) : "") + (asc(yd) != null ? " · ersatte " + f2(asc(yd)) + " kr/kWh" : "") : "", yd && yd.net < 0 ? "g-buy" : "g-sell"], ["Idag hittills", td ? sg(td.net, 1) + " kr" : "–", td ? "dygnet pågår, siffran växer under kvällen" : "", td && td.net < 0 ? "g-buy" : "g-sell"]),
+      this._tg("Just nu i batteriet", "g-batt"),
+      this._pair(["Kvar av köpt el", this._n(R.Sg, 1) + " kWh", "inköpt för snitt " + f2(R.cg) + " kr/kWh", "g-batt"], ["Sol-el via batteriet", f0(T.avS) + " kr", this._n(T.ds, 0) + " kWh gratis el som slapp köpas", "g-sun"]),
     ];
-    const daily = R.list.map((x) => ({ t: x.t, v: x.net }));
+    // How to read it, with yesterday as the worked example
+    let ex = "";
+    if (yd && yd.dg > 0.05) ex = '<div class="sv-ex"><b>Exempel, ' + dayName(yestK) + ':</b> batteriet laddades med <b>' + f1(yd.chgG) + ' kWh</b>' + (bp(yd) != null ? " från nätet för i snitt <b>" + f2(bp(yd)) + " kr/kWh</b>" : "") + ". Under dygnet användes <b>" + f1(yd.dg) + " kWh</b> ur batteriet. Den elen hade kostat <b>" + f2(asc(yd)) + " kr/kWh</b> om du köpt den när du använde den: <b>" + f1(yd.avG) + " kr sparat</b>, minus <b>" + f1(yd.cost) + " kr</b> den kostade att lagra = <b class=\"" + (yd.net >= 0 ? "sv-win" : "sv-loss") + "\">" + sg(yd.net, 1) + " kr</b>.</div>";
+    const how = '<div class="sv-how"><div class="sv-how-t">Så läser du fliken</div><div><span class="sv-chip sv-c1">Inköp</span> vad du betalade för el du laddade in från nätet (oftast billig natt-el).</div><div><span class="sv-chip sv-c2">Användning</span> el du tog ur batteriet, och vad samma el hade kostat just då.</div><div><span class="sv-chip sv-c3">Resultat</span> sparat − kostade = vinst. Varje rad är ett dygn (00:00–24:00).</div>' + ex + "</div>";
+    // Bar chart, last 14 days
+    const last = []; for (let i = 13; i >= 0; i--) { const k = dk(new Date(Date.now() - i * 86400e3)); last.push({ k, x: byDay[k] || null }); }
+    const vals = last.map((o) => (o.x ? o.x.net : 0)), mxP = Math.max(0.5, Math.max.apply(null, vals)), mxN = Math.max(0, -Math.min.apply(null, vals)), H = 130, sc = H / (mxP + mxN), base = mxN * sc;
+    const bars = last.map((o) => {
+      const v = o.x ? o.x.net : 0, h = Math.max(1, Math.abs(v) * sc), d = new Date(o.k + "T12:00:00"), wk = d.getDay() === 0 || d.getDay() === 6;
+      return '<div class="sv-bc' + (o.k === todayK ? " today" : "") + (wk ? " wk" : "") + '"><div class="sv-bplot" style="height:' + (H + 22) + 'px">' + (o.x ? '<div class="sv-bar ' + (v >= 0 ? "pos" : "neg") + '" style="height:' + h.toFixed(1) + "px;bottom:" + (v >= 0 ? base : base - h).toFixed(1) + 'px"></div><div class="sv-bv" style="bottom:' + (v >= 0 ? base + h + 2 : Math.max(0, base - h - 14)).toFixed(1) + 'px">' + (Math.abs(v) < 9.5 ? this._n(v, 1) : f0(v)) + "</div>" : "") + '</div><div class="sv-bl"><b>' + d.toLocaleDateString("sv-SE", { weekday: "short" }).replace(".", "") + "</b><br>" + d.getDate() + "</div></div>";
+    }).join("");
+    const barsHtml = '<div class="d-ct">Vinst per dygn, senaste 14 dagarna <span class="d-note">kr · ljus ram = idag (pågår) · markerade dagar = helg</span></div><div class="sv-bars">' + bars + "</div>";
+    // Per-day table with month headers
+    const showAll = !!this._sparAll, list = R.list.slice().reverse(), shown = showAll ? list : list.filter((x) => Date.parse(x.day + "T12:00:00") >= Date.now() - 31 * 86400e3);
+    let body = "", curMonth = "";
+    shown.forEach((x) => {
+      const m = x.day.slice(0, 7);
+      if (m !== curMonth) {
+        curMonth = m; const o = mon[m], ap = o.dg > 0 ? o.avG / (o.dg * e) : null, bpp = o.chgG > 0 ? o.spend / o.chgG : null;
+        body += '<tr class="sv-m"><td colspan="9"><b>' + mn[parseInt(m.slice(5), 10) - 1] + " " + m.slice(0, 4) + (m === curM ? " (hittills)" : "") + '</b><span class="sv-mt">vinst <b class="' + (o.net >= 0 ? "sv-win" : "sv-loss") + '">' + sg(o.net, 0) + " kr</b> · köpte in " + f0(o.chgG) + " kWh" + (bpp != null ? " à " + f2(bpp) : "") + " · använde " + f0(o.dg) + " kWh" + (ap != null ? ", ersatte " + f2(ap) + " kr/kWh" : "") + "</span></td></tr>";
+      }
+      const d = new Date(x.day + "T12:00:00"), wk = d.getDay() === 0 || d.getDay() === 6, a = asc(x), b = bp(x), spread = a != null && b != null ? a - b : null;
+      body += '<tr class="sv-d' + (wk ? " sv-wk" : "") + (x.day === todayK ? " sv-today" : "") + '"><td class="sv-day">' + dayName(x.day) + (x.day === todayK ? ' <i>pågår</i>' : "") + "</td>" +
+        '<td class="sv-c1">' + (x.chgG > 0.05 ? f1(x.chgG) : "–") + '</td><td>' + (b != null ? f2(b) : "–") + "</td>" +
+        '<td class="sv-c2">' + (x.dg > 0.05 ? f1(x.dg) : "–") + "</td><td>" + (a != null ? f2(a) + (spread != null ? ' <small class="' + (spread >= 0 ? "sv-win" : "sv-loss") + '">' + (spread >= 0 ? "+" : "−") + f2(Math.abs(spread)) + "</small>" : "") : "–") + "</td>" +
+        '<td class="sv-c3">' + (x.dg > 0.05 ? f1(x.avG) : "–") + "</td><td>" + (x.dg > 0.05 ? f1(x.cost) : "–") + '</td><td class="sv-net ' + (x.net >= 0 ? "sv-win" : "sv-loss") + '">' + (x.dg > 0.05 ? sg(x.net, 1) : "–") + '</td><td class="sv-c4">' + (x.ds > 0.05 ? f1(x.avS) : "–") + "</td></tr>";
+    });
+    const th = '<thead><tr class="sv-g"><th></th><th colspan="2" class="sv-c1">Inköp</th><th colspan="2" class="sv-c2">Användning</th><th colspan="3" class="sv-c3">Resultat</th><th class="sv-c4">Sol</th></tr>' +
+      '<tr><th>Dygn</th><th class="sv-c1">Köpte in<br><small>kWh</small></th><th>Pris<br><small>kr/kWh</small></th><th class="sv-c2">Använde<br><small>kWh</small></th><th>Ersatte<br><small>kr/kWh</small></th><th class="sv-c3">Sparat<br><small>kr</small></th><th>Kostade<br><small>kr</small></th><th>Vinst<br><small>kr</small></th><th class="sv-c4">Sol-el<br><small>kr</small></th></tr></thead>';
+    const more = list.length > shown.length ? '<div class="fr-row" style="margin:8px 0"><button class="fr-b" data-action="spar-all">Visa alla ' + list.length + " dygn</button></div>" : showAll && list.length > 31 ? '<div class="fr-row" style="margin:8px 0"><button class="fr-b" data-action="spar-all">Visa bara senaste månaden</button></div>' : "";
+    const table = '<div class="d-ct">Dygn för dygn <span class="d-note">varje rad = ett dygn 00:00–24:00 · vinst = sparat − kostade · liten siffra vid Ersatte = prisskillnad mot inköpspriset</span></div><div class="sv-wrap"><table class="sv-t">' + th + "<tbody>" + body + "</tbody></table></div>" + more;
     const cum = R.list.map((x) => ({ t: x.t, v: x.cum }));
     const t0 = R.list.length ? R.list[0].t - 12 * 3600e3 : undefined, t1 = Date.now();
     const charts = [
+      how,
       '<div class="d-ct">Beräkningssätt <span class="d-note">förluster = laddning in + urladdning ut i växelriktaren</span></div>' + toggle,
+      barsHtml,
+      table,
       this._dChart("Ackumulerad vinst (kr)", [{ color: "#3ddc84", pts: cum, area: true }], { unit: "kr", d: 0, t0, t1, stepH: 24 * 14, h: 200 }),
-      this._dChart("Vinst per dygn (kr)", [{ legend: [["#3ddc84", "Vinst"], ["#ff7a59", "Förlust"]], color: "#3ddc84", split: ["#3ddc84", "#ff7a59"], pts: daily }], { unit: "kr", d: 1, t0, t1, stepH: 24 * 14, h: 190 }),
     ];
-    const extra = '<div class="d-ct">Per månad <span class="d-note">vinst = inköp som slapp köpas minus vad den lagrade elen kostade</span></div><div class="sp-tab">' + rows + "</div>" +
-      '<div class="d-note" style="margin-top:10px;line-height:1.5">Så räknas det: den el som laddats från nätet värderas till Tibbers timpris när den köptes (genomsnittskostnad över det som ligger lagrat). När batteriet laddar ur räknas varje kWh som en kWh du annars hade köpt till timpriset just då. Vinsten är skillnaden. Elpriset är Tibbers pris per timme; nätavgifter och effektavgift ingår inte. Sol-el som lagras räknas inte in i vinsten (den är gratis), men visas separat. Batteriet antas ha startat med sol-el. Det är en uppskattning, inte en mätning.</div>';
+    const extra = '<div class="d-note" style="margin-top:10px;line-height:1.5">Så räknas det: den el som laddats från nätet värderas till Tibbers timpris när den köptes (genomsnittskostnad över det som ligger lagrat). När batteriet laddar ur räknas varje kWh som en kWh du annars hade köpt till timpriset just då. Vinsten är skillnaden. Elpriset är Tibbers pris per timme; nätavgifter och effektavgift ingår inte. Sol-el som lagras räknas inte in i vinsten (den är gratis), men visas separat. Batteriet antas ha startat med sol-el. Det är en uppskattning, inte en mätning. Ett dygn kan visa förlust när batteriet använder el som köptes dyrare än vad den ersätter.</div>';
     return { tiles, charts, extra };
   }
   // Grid cost per calendar month (hourly long-term statistics x Tibber hourly price), up to ~13 months back
@@ -2521,6 +2560,41 @@ const STYLE = `
   .d-ts { font-size: 12px; opacity: 0.75; margin-top: 2px; }
   .d-ct { font-size: 13px; font-weight: 700; margin: 10px 0 4px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .d-note { font-weight: 400; opacity: 0.6; font-size: 11px; }
+  .sv-how { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 14px; margin: 4px 0 12px; font-size: 13px; line-height: 1.55; display: grid; gap: 4px; }
+  .sv-how-t { font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; opacity: 0.8; }
+  .sv-ex { margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.14); }
+  .sv-chip { display: inline-block; font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 99px; margin-right: 6px; color: #10151c; }
+  .sv-chip.sv-c1 { background: #ff7a59; } .sv-chip.sv-c2 { background: #5ab0ff; } .sv-chip.sv-c3 { background: #3ddc84; }
+  .sv-win { color: #3ddc84; } .sv-loss { color: #ff7a59; }
+  .sv-bars { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin: 4px 0 14px; }
+  .sv-bc { border-radius: 8px; padding: 2px 2px 4px; background: rgba(255,255,255,0.04); text-align: center; font-size: 11px; line-height: 1.25; }
+  .sv-bc.wk { background: rgba(255,255,255,0.09); }
+  .sv-bc.today { outline: 1px dashed rgba(255,255,255,0.55); }
+  .sv-bc.today .sv-bar { opacity: 0.6; }
+  .sv-bplot { position: relative; }
+  .sv-bar { position: absolute; left: 22%; right: 22%; border-radius: 4px 4px 0 0; }
+  .sv-bar.pos { background: #3ddc84; } .sv-bar.neg { background: #ff7a59; border-radius: 0 0 4px 4px; }
+  .sv-bv { position: absolute; left: 0; right: 0; font-weight: 700; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .sv-bl { opacity: 0.85; text-transform: capitalize; }
+  .sv-wrap { overflow-x: auto; border-radius: 10px; background: rgba(255,255,255,0.04); max-height: 520px; overflow-y: auto; }
+  .sv-t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .sv-t th { position: sticky; top: 0; z-index: 2; background: #1c232d; font-size: 11px; font-weight: 700; padding: 6px 8px; text-align: right; line-height: 1.2; border-bottom: 1px solid rgba(255,255,255,0.2); }
+  .sv-t th small { font-weight: 400; opacity: 0.7; }
+  .sv-t tr.sv-g th { top: 0; text-align: center; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 0; }
+  .sv-t tr.sv-g + tr th { top: 24px; }
+  .sv-t th:first-child, .sv-t td:first-child { text-align: left; }
+  .sv-t td { padding: 7px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.09); white-space: nowrap; }
+  .sv-t td.sv-day { width: 150px; font-weight: 700; text-transform: capitalize; border-right: 1px solid rgba(255,255,255,0.16); }
+  .sv-t td.sv-day i { font-weight: 400; font-size: 11px; opacity: 0.7; text-transform: none; }
+  .sv-t .sv-c1 { border-left: 3px solid #ff7a59; } .sv-t .sv-c2 { border-left: 3px solid #5ab0ff; } .sv-t .sv-c3 { border-left: 3px solid #3ddc84; } .sv-t .sv-c4 { border-left: 3px solid #ffc83d; }
+  .sv-t td.sv-net { font-weight: 800; }
+  .sv-t td small { font-size: 11px; margin-left: 3px; }
+  .sv-t tr.sv-wk td { background: rgba(255,255,255,0.045); }
+  .sv-t tr.sv-today td { background: rgba(255,255,255,0.08); }
+  .sv-t tr.sv-m td { background: rgba(255,255,255,0.14); text-align: left; padding: 9px 10px; border-top: 2px solid rgba(255,255,255,0.35); white-space: normal; }
+  .sv-t tr.sv-m td > b:first-child { text-transform: capitalize; font-size: 14px; }
+  .sv-mt { margin-left: 10px; font-size: 12px; opacity: 0.9; }
+  @media (max-width: 700px) { .sv-bars { gap: 2px; } .sv-t { font-size: 12px; } }
   .sp-tab { display: grid; gap: 6px; }
   .sp-row { display: grid; grid-template-columns: 1.2fr 0.7fr 1.3fr 1.5fr; gap: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
   .sp-row5 { grid-template-columns: 1.3fr 0.9fr 1.4fr 1.3fr 0.9fr; }
