@@ -702,7 +702,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   _detailTabs() {
     return [
       { k: "sol", t: "☀️ Sol" }, { k: "hus", t: "🏠 Hus" }, { k: "batt", t: "🔋 Batteri" },
-      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vit", t: "🧺 Vitvaror" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" }, { k: "spar", t: "💸 Besparing" },
+      { k: "nat", t: "⚡ Nät" }, { k: "bil", t: "🚗 Bil" }, { k: "pris", t: "💰 Elpris" }, { k: "plan", t: "🗓 Plan" }, { k: "vit", t: "🧺 Vitvaror" }, { k: "vader", t: "🌬️ Väder" }, { k: "mp", t: "🔌 Multiplus" }, { k: "spar", t: "💸 Besparing" }, { k: "avbrott", t: "🔦 Elavbrott" },
     ].concat(this._st("frame_player") ? [{ k: "frame", t: "📺 The Frame" }] : []);
   }
   _openDetail(tab) {
@@ -830,6 +830,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       const lab = stepH < 24 ? String(new Date(t).getHours()).padStart(2, "0") : stepH >= 24 * 7 ? new Date(t).toLocaleDateString("sv-SE", { day: "numeric", month: "short" }) : new Date(t).toLocaleDateString("sv-SE", { weekday: "short", day: "numeric" });
       g += '<line x1="' + X(t).toFixed(1) + '" x2="' + X(t).toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" class="d-grid v"/><text x="' + X(t).toFixed(1) + '" y="' + (H - 7) + '" class="d-ax" text-anchor="middle">' + lab + "</text>";
     }
+    (o.bands || []).forEach((b) => { const x0 = Math.max(L, X(Math.max(b.t0, t0))), x1 = Math.min(W - R, X(Math.min(b.t1, t1))); if (x1 > x0) g += '<rect x="' + x0.toFixed(1) + '" y="' + T + '" width="' + (x1 - x0).toFixed(1) + '" height="' + (H - T - B) + '" fill="' + (b.color || "#ff5a5a") + '" fill-opacity="0.16"/>'; });
     if (o.t1 && o.t1 > Date.now()) { const xn = X(Date.now()).toFixed(1); g += '<line x1="' + xn + '" x2="' + xn + '" y1="' + T + '" y2="' + (H - B) + '" class="d-now"/>'; }
     let body = "", defs = "";
     series.forEach((s, i) => {
@@ -901,7 +902,18 @@ class GrankulleEnergyCardV2 extends HTMLElement {
     if (!body || root.getElementById("detail").style.display === "none") return;
     root.getElementById("d-tabs").innerHTML = this._detailTabs().map((t) => '<button class="d-tab' + (t.k === this._dTab ? " on" : "") + '" data-action="detail-tab" data-tab="' + t.k + '">' + t.t + "</button>").join("");
     root.getElementById("d-range").innerHTML = [["24h", "24 tim"], ["7d", "7 dygn"]].map((r) => '<button class="d-rb' + (r[0] === this._dRange ? " on" : "") + '" data-action="detail-range" data-range="' + r[0] + '">' + r[1] + "</button>").join("");
-    const rg = root.getElementById("d-range"); if (rg) rg.style.display = this._dTab === "frame" || this._dTab === "spar" ? "none" : "";
+    const rg = root.getElementById("d-range"); if (rg) rg.style.display = this._dTab === "frame" || this._dTab === "spar" || this._dTab === "avbrott" ? "none" : "";
+    if (this._dTab === "avbrott") {
+      if (rg) rg.style.display = "none";
+      if (!this._out || Date.now() - this._out.at > 10 * 60e3) { if (!this._outBusy) this._loadOutages(); if (!this._out) { body.innerHTML = '<div class="d-empty">Letar efter elavbrott i historiken (kan ta några sekunder)…</div>'; return; } }
+      const sc3 = body.scrollTop;
+      this._dCharts = {};
+      const oo = this._dTab_avbrott();
+      body.innerHTML = '<div class="d-tiles">' + oo.tiles.join("") + "</div>" + oo.charts.join("") + (oo.extra || "");
+      this._wireCharts();
+      body.scrollTop = sc3;
+      return;
+    }
     if (this._dTab === "spar") {
       if (rg) rg.style.display = "none";
       if (!this._spar || Date.now() - this._spar.at > 30 * 60e3) { if (!this._sparBusy) this._loadSavings(); if (!this._spar) { body.innerHTML = '<div class="d-empty">Räknar på historiken (kan ta några sekunder)…</div>'; return; } }
@@ -1135,6 +1147,128 @@ class GrankulleEnergyCardV2 extends HTMLElement {
       this._dChart("Ackumulerad vinst (kr)", [{ color: "#3ddc84", pts: cum, area: true }], { unit: "kr", d: 0, t0, t1, stepH: 24 * 14, h: 200 }),
     ];
     const extra = '<div class="d-note" style="margin-top:10px;line-height:1.5">Så räknas det: den el som laddats från nätet värderas till Tibbers timpris när den köptes (genomsnittskostnad över det som ligger lagrat). När batteriet laddar ur räknas varje kWh som en kWh du annars hade köpt till timpriset just då. Vinsten är skillnaden. Elpriset är Tibbers pris per timme; nätavgifter och effektavgift ingår inte. Sol-el som lagras räknas inte in i vinsten (den är gratis), men visas separat. Batteriet antas ha startat med sol-el. Det är en uppskattning, inte en mätning. Ett dygn kan visa förlust när batteriet använder el som köptes dyrare än vad den ersätter.</div>';
+    return { tiles, charts, extra };
+  }
+  // ---------- Elavbrott: find periods when the Multiplus saw no grid voltage (long-term statistics, 5-min for the last ~10 days) ----------
+  async _loadOutages() {
+    if (!this._hass || !this._hass.callWS || this._outBusy) return;
+    this._outBusy = true;
+    try {
+      const vk = ["mp_in_v1", "mp_in_v2", "mp_in_v3"], vids = vk.map((k) => this._e(k)).filter(Boolean);
+      const sid = this._e("battery_soc"), bid = this._e("battery_power");
+      const hk = ["house_power_l1", "house_power_l2", "house_power_l3"].map((k) => this._e(k)).filter(Boolean);
+      if (!vids.length || !sid) throw new Error("saknar entiteter (inspänning / batteri)");
+      const ts = (x) => (typeof x.start === "number" ? x.start : Date.parse(x.start));
+      const q = (start, per, ids, types) => this._hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(start).toISOString(), end_time: new Date().toISOString(), statistic_ids: ids, period: per, types });
+      const all = vids.concat([sid, bid].filter(Boolean), hk);
+      const [rh, rf] = await Promise.all([q(Date.now() - 420 * 86400e3, "hour", all, ["min", "max", "mean"]), q(Date.now() - 10 * 86400e3, "5minute", all, ["min", "max", "mean"]).catch(() => ({}))]);
+      // bucket map: t -> {len, vmin, vmean, soc{min,max,mean}, bp, hp}; 5-min buckets replace the hour they cover
+      const B = {};
+      const add = (r, len) => {
+        const put = (id, f) => (r[id] || []).forEach((x) => { const t = ts(x), b = B[t] = B[t] || { t, len }; f(b, x); });
+        vids.forEach((id) => put(id, (b, x) => { b.vmin = Math.min(b.vmin == null ? 1e9 : b.vmin, x.min == null ? 1e9 : x.min); b.vm = (b.vm || []).concat(x.mean == null ? [] : [x.mean]); }));
+        put(sid, (b, x) => { b.smin = x.min; b.smax = x.max; b.smean = x.mean; });
+        if (bid) put(bid, (b, x) => { b.bp = x.mean; });
+        hk.forEach((id) => put(id, (b, x) => { b.hp = (b.hp || 0) + (x.mean || 0); }));
+      };
+      const hourB = {}; add(rh, 3600e3); Object.keys(B).forEach((k) => { hourB[k] = B[k]; delete B[k]; });
+      add(rf, 300e3);
+      const fine = Object.keys(B).map(Number).sort((a, b) => a - b);
+      const fineFrom = fine.length ? fine[0] : null;
+      let list = [];
+      Object.keys(hourB).map(Number).forEach((t) => { if (fineFrom == null || t + 3600e3 <= fineFrom) list.push(hourB[t]); });
+      fine.forEach((t) => list.push(B[t]));
+      list.sort((a, b) => a.t - b.t);
+      const NOM = 230;
+      list.forEach((b) => {
+        b.vavg = b.vm && b.vm.length ? b.vm.reduce((a, c) => a + c, 0) / b.vm.length : null;
+        b.out = b.vmin != null && b.vmin < 50;
+        b.frac = b.out ? (b.vm && b.vm.length ? Math.min(1, Math.max(0.02, 1 - Math.min.apply(null, b.vm) / NOM)) : 1) : 0;
+      });
+      // merge consecutive outage buckets into events
+      const ev = []; let cur = null;
+      list.forEach((b) => {
+        if (b.out) { if (cur && b.t - cur.last.t <= cur.last.len + 1) { cur.b.push(b); cur.last = b; } else { cur = { b: [b], last: b }; ev.push(cur); } } else cur = null;
+      });
+      const socSeries = list.filter((b) => b.smean != null).map((b) => ({ t: b.t + b.len / 2, v: b.smean }));
+      const interp = (t) => {
+        if (!socSeries.length) return null;
+        let lo = null, hi = null;
+        for (let i = 0; i < socSeries.length; i++) { if (socSeries[i].t <= t) lo = socSeries[i]; else { hi = socSeries[i]; break; } }
+        if (lo && hi && hi.t - lo.t < 3 * 3600e3) return lo.v + (hi.v - lo.v) * ((t - lo.t) / (hi.t - lo.t));
+        const near = lo && hi ? (t - lo.t < hi.t - t ? lo : hi) : lo || hi;
+        return near && Math.abs(near.t - t) < 2 * 3600e3 ? near.v : null;
+      };
+      const events = ev.map((e) => {
+        const bs = e.b, f = bs[0], l = bs[bs.length - 1], fine = f.len < 3600e3;
+        const downMs = bs.reduce((a, b) => a + b.frac * b.len, 0);
+        // The outage is at the END of the first bucket and at the START of the last bucket (partial buckets); middle buckets are fully out.
+        let start, end;
+        if (bs.length === 1) { start = f.t + (f.len - downMs) / 2; end = start + downMs; }
+        else { start = f.t + f.len * (1 - f.frac); end = l.t + l.len * l.frac; }
+        const durMs = Math.max(downMs, 60e3);
+        const sStart = interp(start), sEnd = interp(end);
+        const inside = bs.filter((b) => b.t >= start - 1 && b.t + b.len <= end + 1 && b.smin != null).map((b) => b.smin);
+        let sMin = Math.min.apply(null, [sStart, sEnd].filter((x) => x != null).concat(inside));
+        if (!isFinite(sMin)) sMin = null;
+        // battery energy used during the outage (kWh), house load kWh
+        let kwhB = 0, kwhH = 0, hasB = false;
+        bs.forEach((b) => { const hrs = (b.frac * b.len) / 3600e3; if (b.bp != null) { hasB = true; kwhB += Math.max(0, -b.bp) / 1000 * hrs; } if (b.hp != null) kwhH += b.hp / 1000 * hrs; });
+        const pad = 2.5 * 3600e3, socPts = socSeries.filter((p) => p.t >= start - pad && p.t <= end + pad);
+        return { start, end, durMs, fine: fine, sStart, sEnd, sMin, kwhB: hasB ? kwhB : null, kwhH, socPts, nb: bs.length };
+      });
+      const first = list.length ? list[0].t : null;
+      const nowOut = vids.some((id) => { const v = parseFloat((this._hass.states[id] || {}).state); return isFinite(v) && v < 50; });
+      this._out = { at: Date.now(), events: events.reverse(), first, nowOut };
+    } catch (e) { console.warn("grankulle: outages failed", e); this._out = { at: Date.now(), error: String((e && e.message) || e), events: [] }; }
+    this._outBusy = false;
+    if (this._dTab === "avbrott") this._renderDetail();
+  }
+  _durTxt(ms) {
+    const m = Math.round(ms / 60000);
+    if (m < 60) return m + " min";
+    const h = Math.floor(m / 60), r = m % 60;
+    return h + " tim" + (r ? " " + r + " min" : "");
+  }
+  _dTab_avbrott() {
+    const O = this._out || { events: [] };
+    if (O.error) return { tiles: [], charts: ['<div class="d-empty">Kunde inte läsa historiken: ' + O.error + "</div>"] };
+    const E = O.events, vNow = [1, 2, 3].map((i) => this._num("mp_in_v" + i)), cap = (this._battCost && this._battCost.cap) || 19, soc = this._num("battery_soc");
+    const total = E.reduce((a, e) => a + e.durMs, 0), longest = E.reduce((a, e) => (!a || e.durMs > a.durMs ? e : a), null);
+    const gridOk = vNow.some((v) => v != null && v > 150);
+    const days = O.first ? Math.max(1, Math.round((Date.now() - O.first) / 86400e3)) : 0;
+    const tiles = [
+      this._tg("Nätet just nu", gridOk ? "g-sell" : "g-buy"),
+      this._pair([gridOk ? "Nätet är uppe" : "Elavbrott pågår", vNow.map((v) => this._n(v, 0)).join(" / ") + " V", "inspänning L1 / L2 / L3", gridOk ? "g-sell" : "g-buy"], ["Batteri", this._n(soc, 0) + " %", cap ? "ca " + this._n(soc / 100 * cap, 1) + " kWh lagrat" : "", "g-batt"]),
+      this._tg("Elavbrott i historiken", "g-info"),
+      this._pair(["Antal avbrott", String(E.length), days ? "senaste " + days + " dygnen" : "", "g-buy"], ["Total tid utan nät", E.length ? this._durTxt(total) : "–", longest ? "längsta " + this._durTxt(longest.durMs) : "", "g-buy"]),
+    ];
+    // How long the battery would last at the average outage load seen in the history
+    const loads = E.filter((e) => e.kwhB != null && e.durMs > 0).map((e) => e.kwhB / (e.durMs / 3600e3));
+    if (loads.length && soc != null) {
+      const avgKw = loads.reduce((a, c) => a + c, 0) / loads.length, usable = Math.max(0, soc - 10) / 100 * cap;
+      tiles.push(this._tg("Så länge räcker batteriet", "g-batt"));
+      tiles.push(this._pair(["Med dagens laddning", avgKw > 0.05 ? this._hrs(usable / avgKw) : "–", "ner till 10 % vid " + this._n(avgKw, 2) + " kW (snitt förra avbrotten)", "g-batt"], ["Fulladdat (100 %)", avgKw > 0.05 ? this._hrs(0.9 * cap / avgKw) : "–", "ner till 10 %", "g-batt"]));
+    }
+    const mon = (t) => new Date(t).toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const hm = (t) => new Date(t).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    const charts = [];
+    E.slice(0, 6).forEach((e, i) => {
+      const ap = e.fine ? "" : "ca ";
+      const same = new Date(e.start).toDateString() === new Date(e.end).toDateString();
+      const when = mon(e.start) + " " + hm(e.start) + " – " + (same ? "" : mon(e.end) + " ") + hm(e.end);
+      const drop = e.sStart != null && e.sEnd != null ? e.sStart - e.sEnd : null;
+      charts.push("");
+      charts[charts.length - 1] = '<div class="d-ct" style="margin-top:14px">' + when + (e.fine ? "" : ' <span class="d-note">tider ca, räknat på timdata</span>') + "</div>" +
+        '<div class="d-tiles" style="margin-bottom:6px">' +
+        this._pair(["Längd", this._durTxt(e.durMs), ap + "utan nät", "g-buy"], ["Batteri (start → slut)", this._n(e.sStart, 0) + " → " + this._n(e.sEnd, 0) + " %", drop != null ? "−" + this._n(Math.max(0, drop), 0) + " procentenheter" : "", "g-batt"]) +
+        this._pair(["Lägsta batteri", e.sMin != null ? this._n(e.sMin, 0) + " %" : "–", e.sMin != null && cap ? "ca " + this._n(e.sMin / 100 * cap, 1) + " kWh kvar" : "", "g-batt"], ["Från batteriet", e.kwhB != null ? this._n(e.kwhB, 1) + " kWh" : "–", e.kwhB != null && e.durMs > 0 ? "snitt " + this._n(e.kwhB / (e.durMs / 3600e3), 2) + " kW" : "", "g-house"]) + "</div>";
+      const pad = 2.5 * 3600e3;
+      charts.push(this._dChart("Batteriets laddning under avbrottet (röd yta = utan nät)", [{ color: "#4dd0e1", name: "Batteri", pts: e.socPts, area: true }], { unit: "%", d: 0, t0: Math.floor((e.start - pad) / 3600e3) * 3600e3, t1: Math.ceil((e.end + pad) / 3600e3) * 3600e3, stepH: 1, h: 150, min: 0, max: 100, bands: [{ t0: e.start, t1: e.end, color: "#ff5a5a" }] }));
+    });
+    let extra;
+    if (!E.length) extra = '<div class="d-empty" style="margin-top:12px">Inga elavbrott hittades i historiken' + (days ? " (" + days + " dygn)" : "") + ".</div>";
+    else extra = (E.length > 6 ? '<div class="d-note" style="margin-top:8px">Visar de 6 senaste av ' + E.length + " avbrotten.</div>" : "") + '<div class="d-note" style="margin-top:10px;line-height:1.5">Så hittas avbrotten: Multiplusarna mäter nätets spänning. När den faller under 50 V räknas det som elavbrott. Närmare tio dygn bakåt finns data per 5 minuter, äldre bara som timmedel, då är start, slut och längd uppskattade från hur stor del av timmen spänningen var borta. Batteriprocenten är inläst/interpolerad från samma historik. Kortare avbrott än några minuter kan missas eller visas med några minuters osäkerhet. Batteriets förbrukning är uppskattad från batteriets medeleffekt. Hur länge batteriet räcker är en grov uppskattning (10 % lämnas som reserv).</div>';
     return { tiles, charts, extra };
   }
   // Grid cost per calendar month (hourly long-term statistics x Tibber hourly price), up to ~13 months back
@@ -2000,7 +2134,7 @@ class GrankulleEnergyCardV2 extends HTMLElement {
   }
   _dayReset() {
     this._closeDetail();
-    this._dCache = {}; this._dData = null; this._spar = null; this._gm = null; this._plan = null; this._planCache = null;
+    this._dCache = {}; this._dData = null; this._spar = null; this._gm = null; this._out = null; this._plan = null; this._planCache = null;
     this._solarToday = null; this._sessCost = null; this._events = []; this._lbuf = []; this._gbuf = [];
     this._fetchDay(); this._fetchPrices(); this._fetchSession(); this._fetchEvents(); this._fetchWarnings();
     if (this._fetchForecast) this._fetchForecast();
